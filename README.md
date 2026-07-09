@@ -1,8 +1,6 @@
 # RADIX: Root Anatomy Deep Identification across Species
 
-Semantic segmentation of plant root cross-section fluorescence microscopy. Trained on Millet, Rice, Sorghum, and Tomato roots imaged on Olympus IX83, Cytation C10, and Zeiss LSM 970 microscopes. Produces per-pixel labels for 7 anatomical classes (Background, Epidermis, Aerenchyma, Endodermis, Vascular, Exodermis, Cortex) and downstream measurements (aerenchyma ratio, per-region channel intensities).
-
-Headline model: DINOv3-S/16 encoder with a Meta-exact DPT decoder.
+RADIX is a semantic segmentation model for plant root cross-section fluorescence microscopy. It uses a DINOv3 vision transformer encoder with a DPT decoder, and outputs per-pixel labels for 7 anatomical classes: Background, Epidermis, Aerenchyma, Endodermis, Vascular, Exodermis, and Cortex. Trained on Millet, Rice, Sorghum, and Tomato roots imaged on Olympus IX83, Cytation C10, and Zeiss LSM 970 microscopes.
 
 ---
 
