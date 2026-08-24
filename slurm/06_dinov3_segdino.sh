@@ -1,7 +1,5 @@
 #!/bin/bash
-# DINOv3 + SegDINO MLP head, Strategy A — decoder-isolation comparison (Fig 2f, "SegDINO").
-# Lightweight per-patch MLP head paired with the same DINOv3-S/16 encoder used by RADIX.
-# Output: output/runs/timm/segdino_mlp_facebook_dinov3-vits16-pretrain-lvd1689m_equalw_drop_shuf_dfcel_semantic7c_A/
+
 #SBATCH --job-name=dinov3_segdino
 #SBATCH --partition=gpu-qi
 #SBATCH --gres=gpu:a100_80:1

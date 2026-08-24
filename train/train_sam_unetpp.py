@@ -35,7 +35,6 @@ import importlib.machinery
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Mock nifty/vigra/affogato if not available (only needed for elf post-processing)
 class _NiftyVigraMockFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     _PREFIXES = ("nifty", "vigra", "affogato")
     def find_spec(self, fullname, path, target=None):
@@ -52,7 +51,7 @@ class _NiftyVigraMockFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         pass
 
 try:
-    import nifty  # noqa: F401
+    import nifty
 except ImportError:
     sys.meta_path.insert(0, _NiftyVigraMockFinder())
 
@@ -85,11 +84,7 @@ from src.splits import get_split, print_split_summary
 NUM_CLASSES = 7
 CLASS_NAMES = ["bg", "epidermis", "aerenchyma", "endo_ring", "vascular", "exo_ring", "cortex"]
 
-# ViT-B intermediate block indices to extract features from
 EXTRACT_BLOCKS = [2, 5, 8, 11]
-
-
-# ── LoRA (reused from train_sam_semantic.py) ─────────────────────────────────
 
 class LoRALinear(nn.Module):
     """Low-rank adaptation wrapper for nn.Linear."""
@@ -107,7 +102,6 @@ class LoRALinear(nn.Module):
         lora = (x @ self.lora_A @ self.lora_B) * (self.alpha / self.rank)
         return base + lora
 
-
 def apply_lora_to_encoder(image_encoder, rank=4, alpha=1.0):
     """Apply LoRA to all attention QKV and output projections in ViT encoder."""
     lora_params = 0
@@ -121,9 +115,6 @@ def apply_lora_to_encoder(image_encoder, rank=4, alpha=1.0):
         lora_params += old_proj.in_features * rank + rank * old_proj.out_features
 
     return lora_params
-
-
-# ── FPN Adapter: ViT features → multi-scale pyramid ─────────────────────────
 
 class ViTToFPN(nn.Module):
     """Convert ViT intermediate block features into a multi-scale feature pyramid.
@@ -146,39 +137,30 @@ class ViTToFPN(nn.Module):
         super().__init__()
         self.out_channels = out_channels
 
-        # Project each ViT block output (768-dim) to target channel dims
-        # Block 2 (shallowest) → upsampled most → levels 1,2
-        # Block 11 (deepest) → kept at native or downsampled → levels 4,5
-
-        # Level 5 (1/32): from block 11, downsample 2x
         self.proj_5 = nn.Sequential(
             nn.Conv2d(embed_dim, out_channels[5], 1),
             nn.BatchNorm2d(out_channels[5]),
             nn.ReLU(inplace=True),
         )
 
-        # Level 4 (1/16): from block 11, native resolution
         self.proj_4 = nn.Sequential(
             nn.Conv2d(embed_dim, out_channels[4], 1),
             nn.BatchNorm2d(out_channels[4]),
             nn.ReLU(inplace=True),
         )
 
-        # Level 3 (1/8): from block 8, upsample 2x
         self.proj_3 = nn.Sequential(
             nn.Conv2d(embed_dim, out_channels[3], 1),
             nn.BatchNorm2d(out_channels[3]),
             nn.ReLU(inplace=True),
         )
 
-        # Level 2 (1/4): from block 5, upsample 4x
         self.proj_2 = nn.Sequential(
             nn.Conv2d(embed_dim, out_channels[2], 1),
             nn.BatchNorm2d(out_channels[2]),
             nn.ReLU(inplace=True),
         )
 
-        # Level 1 (1/2): from block 2, upsample 8x
         self.proj_1 = nn.Sequential(
             nn.Conv2d(embed_dim, out_channels[1], 1),
             nn.BatchNorm2d(out_channels[1]),
@@ -195,39 +177,28 @@ class ViTToFPN(nn.Module):
         Returns:
             list of 6 feature maps matching smp encoder output format
         """
-        # Reshape ViT features: (B, h, w, C) -> (B, C, h, w)
+
         feats = [f.permute(0, 3, 1, 2) for f in block_features]
-        # feats[0]=block2, feats[1]=block5, feats[2]=block8, feats[3]=block11
-        # All are (B, 768, H/16, W/16)
 
         h16, w16 = feats[0].shape[2], feats[0].shape[3]
 
-        # Level 0: input image (B, 3, H, W)
         level_0 = x_input
 
-        # Level 1 (1/2): from block 2, upsample 8x from 1/16
         level_1 = self.proj_1(feats[0])
         level_1 = F.interpolate(level_1, scale_factor=8, mode='bilinear', align_corners=False)
 
-        # Level 2 (1/4): from block 5, upsample 4x from 1/16
         level_2 = self.proj_2(feats[1])
         level_2 = F.interpolate(level_2, scale_factor=4, mode='bilinear', align_corners=False)
 
-        # Level 3 (1/8): from block 8, upsample 2x from 1/16
         level_3 = self.proj_3(feats[2])
         level_3 = F.interpolate(level_3, scale_factor=2, mode='bilinear', align_corners=False)
 
-        # Level 4 (1/16): from block 11, native resolution
         level_4 = self.proj_4(feats[3])
 
-        # Level 5 (1/32): from block 11, downsample 2x
         level_5 = self.proj_5(feats[3])
         level_5 = F.avg_pool2d(level_5, kernel_size=2, stride=2)
 
         return [level_0, level_1, level_2, level_3, level_4, level_5]
-
-
-# ── Model ────────────────────────────────────────────────────────────────────
 
 class SAMUNetPPModel(nn.Module):
     """SAM ViT-B encoder + FPN adapter + U-Net++ decoder.
@@ -240,17 +211,14 @@ class SAMUNetPPModel(nn.Module):
                  adapter=None, lora_rank=4, lora_alpha=1.0):
         super().__init__()
 
-        # Load SAM encoder
         _, sam = get_sam_model(model_type=model_type, return_sam=True)
         self.image_encoder = sam.image_encoder
-        self.embed_dim = 768  # ViT-B
+        self.embed_dim = 768
 
-        # Freeze encoder
         if freeze_encoder or adapter == "lora":
             for param in self.image_encoder.parameters():
                 param.requires_grad = False
 
-        # Apply LoRA if requested
         self.adapter = adapter
         if adapter == "lora":
             n_lora = apply_lora_to_encoder(
@@ -259,12 +227,9 @@ class SAMUNetPPModel(nn.Module):
             print(f"LoRA applied: rank={lora_rank}, alpha={lora_alpha}, "
                   f"added {n_lora:,} params to {len(list(self.image_encoder.blocks))} blocks")
 
-        # FPN adapter: ViT features → multi-scale pyramid
-        # Match ResNet34 channel dims: [3, 64, 64, 128, 256, 512]
         encoder_channels = (3, 64, 64, 128, 256, 512)
         self.fpn = ViTToFPN(embed_dim=self.embed_dim, out_channels=encoder_channels)
 
-        # U-Net++ decoder from smp (same as ResNet34 baseline)
         from segmentation_models_pytorch.decoders.unetplusplus.decoder import UnetPlusPlusDecoder
         self.decoder = UnetPlusPlusDecoder(
             encoder_channels=encoder_channels,
@@ -272,10 +237,8 @@ class SAMUNetPPModel(nn.Module):
             n_blocks=5,
         )
 
-        # Segmentation head
         self.seg_head = nn.Conv2d(16, NUM_CLASSES, kernel_size=1)
 
-        # SAM normalization
         self.register_buffer(
             "pixel_mean",
             torch.tensor([123.675, 116.28, 103.53]).view(1, 3, 1, 1),
@@ -296,7 +259,6 @@ class SAMUNetPPModel(nn.Module):
         """
         enc = self.image_encoder
 
-        # Patch embedding
         x = enc.patch_embed(x_norm)
         if enc.pos_embed is not None:
             x = x + enc.pos_embed
@@ -320,34 +282,24 @@ class SAMUNetPPModel(nn.Module):
         """
         B, _, H, W = x.shape
 
-        # SAM preprocessing: scale to [0, 255] and normalize
         x_255 = x * 255.0
         x_norm = (x_255 - self.pixel_mean) / self.pixel_std
 
-        # Pad to 1024 if needed (SAM expects 1024x1024)
         if H != 1024 or W != 1024:
             x_norm = F.interpolate(x_norm, size=(1024, 1024), mode='bilinear', align_corners=False)
 
-        # Extract ViT intermediate features
         block_feats = self._extract_block_features(x_norm)
 
-        # FPN: convert to multi-scale pyramid
         pyramid = self.fpn(x, block_feats)
 
-        # U-Net++ decoder
         decoder_out = self.decoder(pyramid)
 
-        # Segmentation head
         logits = self.seg_head(decoder_out)
 
-        # Resize to input resolution if needed
         if logits.shape[2:] != (H, W):
             logits = F.interpolate(logits, size=(H, W), mode='bilinear', align_corners=False)
 
         return logits
-
-
-# ── Lightning Module ─────────────────────────────────────────────────────────
 
 class SAMUNetPPModule(pl.LightningModule):
     """PyTorch Lightning module for SAM + U-Net++ semantic segmentation."""
@@ -385,7 +337,6 @@ class SAMUNetPPModule(pl.LightningModule):
             lora_alpha=lora_alpha,
         )
 
-        # Losses (same as U-Net++ semantic and SAM UNETR)
         self.dice_loss = smp.losses.DiceLoss(mode="multiclass", classes=NUM_CLASSES)
         self.focal_loss = smp.losses.FocalLoss(mode="multiclass")
         self.lovasz_loss = smp.losses.LovaszLoss(mode="multiclass")
@@ -437,7 +388,7 @@ class SAMUNetPPModule(pl.LightningModule):
         return self._shared_step(batch, "test")
 
     def configure_optimizers(self):
-        # Separate encoder params (LoRA or full) from FPN + decoder params
+
         encoder_params = [p for p in self.model.image_encoder.parameters() if p.requires_grad]
         other_params = []
         for name, p in self.model.named_parameters():
@@ -458,9 +409,6 @@ class SAMUNetPPModule(pl.LightningModule):
             optimizer, T_max=self.trainer.max_epochs, eta_min=self.eta_min,
         )
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
-
-
-# ── Training ─────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
@@ -527,12 +475,10 @@ def main():
         eta_min=args.eta_min,
     )
 
-    # Print param summary
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"\nTotal params: {total/1e6:.1f}M | Trainable: {trainable/1e6:.1f}M")
 
-    # Run name: model_pretrain_classweight_augmentation_loss_strategy
     if args.adapter == "lora":
         encoder_tag = f"sam_vit_b_lm_lora_r{args.lora_rank}"
     elif args.unfreeze_encoder:
@@ -555,7 +501,6 @@ def main():
     run_dir = make_run_subfolder(base_run_dir)
     save_hparams(run_dir, args)
 
-    # Epoch logger (same as other training scripts)
     class EpochLogger(Callback):
         def __init__(self, val_dl, val_iou_every=10, run_dir=None):
             self.val_dl = val_dl
@@ -670,7 +615,6 @@ def main():
 
     trainer.fit(model, train_dl, val_dl)
 
-    # Plot loss curves
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -710,13 +654,11 @@ def main():
         fig.savefig(run_dir / "loss_curve.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
 
-    # Test
     print("\n" + "=" * 60)
     print("EVALUATING ON TEST SET")
     trainer.logger = False
     test_results = trainer.test(model, test_dl, ckpt_path="best")
     print(f"Test results: {test_results}")
-
 
 if __name__ == "__main__":
     main()

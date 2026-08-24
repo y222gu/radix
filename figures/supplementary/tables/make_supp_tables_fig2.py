@@ -9,9 +9,9 @@ Source CSVs (in this directory):
 
 Headline model: RADIX (Root Anatomy Deep Identification across species),
 DINOv3-S/16 + DPT-meta. Whole Root is excluded from all per-class and mIoU
-summaries per project convention.
+summaries.
 
-HTML tables follow paper conventions: Helvetica, mm-sized SVG, 600 dpi PNG export.
+HTML tables use Helvetica, mm-sized SVG, and 600 dpi PNG export.
 Open the HTML via `python3 -m http.server` from this directory (or any parent that
 contains it), then click Save PNG / Save SVG to export the figure.
 """
@@ -24,13 +24,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DIVERSITY_CSV = HERE.parent / "diversity_counts.csv"
 
-
 def _normalize_uid(s: str) -> str:
     """Collapse runs of underscores to a single underscore. Source sample IDs
     occasionally use '__' where the spreadsheet uses '_'."""
     import re
     return re.sub(r"_+", "_", s) if s else s
-
 
 def _cell_to_str(v) -> str:
     """Convert an openpyxl cell value to a clean display string. Whole-number
@@ -41,7 +39,6 @@ def _cell_to_str(v) -> str:
     if isinstance(v, float) and v.is_integer():
         return str(int(v))
     return str(v).strip()
-
 
 def load_genotype_map() -> dict:
     if not DIVERSITY_CSV.exists():
@@ -54,9 +51,6 @@ def load_genotype_map() -> dict:
                 m[_normalize_uid(uid)] = gen
     return m
 
-# Display order matches the panels: vascular → exodermis → endodermis → cortex
-# → epidermis → aerenchyma (Fig 2b/c). Panel d order is Rice → Millet → Sorghum
-# → Solanums; panel e is Olympus → C10 → Zeiss.
 CLASSES = ["Vascular", "Exodermis", "Endodermis", "Cortex", "Epidermis", "Aerenchyma"]
 SPECIES_ORDER = ["Rice", "Millet", "Sorghum", "Solanum"]
 SPECIES_LABEL = {"Rice": "Rice", "Millet": "Millet",
@@ -64,9 +58,8 @@ SPECIES_LABEL = {"Rice": "Rice", "Millet": "Millet",
 MICROSCOPE_ROWS = [
     ("Olympus", "test",      "Olympus"),
     ("C10",     "test",      "C10"),
-    ("Zeiss",   "zero-shot", "Zeiss"),  # split key kept lowercase to match CSV data
+    ("Zeiss",   "zero-shot", "Zeiss"),
 ]
-
 
 def floats(rows: list[dict], col: str) -> list[float]:
     out = []
@@ -76,7 +69,6 @@ def floats(rows: list[dict], col: str) -> list[float]:
             continue
         out.append(float(v))
     return out
-
 
 def summary(vals: list[float]) -> dict:
     if not vals:
@@ -92,17 +84,14 @@ def summary(vals: list[float]) -> dict:
         "q3": statistics.quantiles(s, n=4)[2] if len(s) > 1 else s[0],
     }
 
-
 def fmt_mean_std(s: dict) -> str:
     if s["n"] == 0:
         return "n/a"
     return f"{s['mean']:.3f} ± {s['std']:.3f}"
 
-
 def load_csv(p: Path) -> list[dict]:
     with open(p) as f:
         return list(csv.DictReader(f))
-
 
 def build_per_class_table() -> tuple[list[dict], list[str]]:
     """Panels b (in-distribution test) and c (Zeiss out-of-distribution).
@@ -129,15 +118,8 @@ def build_per_class_table() -> tuple[list[dict], list[str]]:
     fields = list(out[0].keys())
     return out, fields
 
-
-# Per-model architectural metadata for the panel f supplementary table.
-# Parameter counts (in millions) verified by instantiating each model and
-# summing parameters under encoder vs. decoder submodules. MicroSAM uses
-# LoRA r=4, so only LoRA adapter params are fine-tuned; all other models
-# fine-tune their encoder end-to-end (ft_encoder_M == encoder_M).
-# Encoder/pretrained-dataset labels follow notes/_make_results_docx.py.
 MODEL_META = {
-    #                          encoder         pretrained      enc_M ft_enc_M dec_M  total_M
+
     "DINOv3 + DPT-meta":       ("DINOv3-S/16", "LVD-1.69B",     21.6, 21.6,    19.3,  40.9),
     "DINOv2 + DPT-meta":       ("DINOv2-S/14", "LVD-142M",      23.6, 23.6,    19.3,  42.9),
     "ResNet34 + UNet++ (IN)":  ("ResNet34",    "ImageNet-1k",   21.3, 21.3,     4.8,  26.1),
@@ -147,7 +129,6 @@ MODEL_META = {
     "MicroSAM + UNETR":        ("SAM ViT-B",   "SA-1B + LM",    89.7,  0.2,    99.7, 189.4),
     "YOLO26m-seg (COCO)":      ("YOLO26m",     "COCO",          10.4, 10.4,    16.7,  27.1),
 }
-
 
 def build_panel_f_table() -> tuple[list[dict], list[str]]:
     """Panel f: per-model sample-level mIoU on in-distribution test and
@@ -161,7 +142,6 @@ def build_panel_f_table() -> tuple[list[dict], list[str]]:
     csv_path = HERE.parent / "per_sample_miou_all_models.csv"
     rows = load_csv(csv_path)
 
-    # Group by (model, split).
     per_ms: dict[tuple[str, str], list[float]] = {}
     for r in rows:
         v = r.get("mean_IoU", "")
@@ -180,15 +160,11 @@ def build_panel_f_table() -> tuple[list[dict], list[str]]:
 
     import re
     def _clean_model(s: str) -> str:
-        # Drop trailing " (XYZ)" since the pretrained dataset already
-        # carries that info in its own column, strip the "-meta"
-        # qualifier from DPT variants, and shorten the SegDINO row since
-        # SegDINO is itself a DINOv3-based pipeline.
+
         s = re.sub(r"\s*\([^)]*\)\s*$", "", s).strip()
         s = s.replace("-meta", "")
         s = s.replace("DINOv3 + SegDINO-MLP", "SegDINO-MLP")
-        # The DINOv3 + DPT model is branded as RADIX in paper-facing
-        # figures and tables.
+
         if s == "DINOv3 + DPT":
             s = "RADIX"
         return s
@@ -220,7 +196,6 @@ def build_panel_f_table() -> tuple[list[dict], list[str]]:
     fields = list(out[0].keys())
     return out, fields
 
-
 def build_panel_f_html_svg(rows_f: list[dict]) -> tuple[str, float, float]:
     """Compact Nature-style table for panel f: per-model sample-level mIoU
     on in-distribution test and Zeiss out-of-distribution test."""
@@ -251,7 +226,6 @@ def build_panel_f_html_svg(rows_f: list[dict]) -> tuple[str, float, float]:
                             group_headers=None,
                             title=None, footnote=[])
 
-
 def build_per_class_by_species_table() -> tuple[list[dict], list[str]]:
     """Per-class IoU broken down by species for RADIX. Rice pools both test
     sets (in-distribution + Zeiss out-of-distribution), matching the species block of
@@ -281,7 +255,6 @@ def build_per_class_by_species_table() -> tuple[list[dict], list[str]]:
     fields = list(out[0].keys())
     return out, fields
 
-
 def build_per_class_by_species_html_svg(rows: list[dict]) -> tuple[str, float, float]:
     """Nature-style table: rows = species, columns = anatomy class IoUs."""
     columns = [
@@ -303,7 +276,6 @@ def build_per_class_by_species_html_svg(rows: list[dict]) -> tuple[str, float, f
     return render_table_svg(columns, body_rows,
                             group_headers=None,
                             title=None, footnote=[])
-
 
 def build_diversity_table() -> tuple[list[dict], list[str]]:
     """Per-genotype sample counts across the four data splits, read from
@@ -336,9 +308,6 @@ def build_diversity_table() -> tuple[list[dict], list[str]]:
             if spl_s in counts[(sp, gen_s)]:
                 counts[(sp, gen_s)][spl_s] += 1
 
-    # Species ordering: monocots (Millet, Rice, Sorghum) then dicots; among
-    # Solanum, the cultivated tomato S. lycopersicum first, then the wild
-    # species alphabetically.
     cultivated = ["Millet", "Rice", "Sorghum", "Solanum_lycopersicum"]
     wild_solanum = sorted({
         sp for (sp, _g) in counts
@@ -356,10 +325,9 @@ def build_diversity_table() -> tuple[list[dict], list[str]]:
         if not g_raw:
             return "-"
         g = re.sub(r"[_\s]*mutants?[_\s]*", " ", g_raw).strip()
-        # Paper-facing spelling fix (see project_kitaake_spelling memory).
+
         g = g.replace("Kittake", "Kitaake")
-        # Italicise gene/allele names: all-lowercase letters/digits/hyphens
-        # with at least one letter (pure-digit accession IDs stay upright).
+
         if (g and g == g.lower()
                 and re.fullmatch(r"[a-z0-9\-]+", g)
                 and re.search(r"[a-z]", g)):
@@ -383,7 +351,6 @@ def build_diversity_table() -> tuple[list[dict], list[str]]:
     fields = list(out[0].keys()) if out else []
     return out, fields
 
-
 def _diversity_single_split_columns(header: str) -> list[dict]:
     return [
         {"key": "Species",  "label": "Species",  "width_mm": 44, "align": "start"},
@@ -391,13 +358,11 @@ def _diversity_single_split_columns(header: str) -> list[dict]:
         {"key": "n",        "label": header,    "width_mm": 14, "align": "middle"},
     ]
 
-
 def _build_diversity_single_split_html_svg(
         rows: list[dict], header: str,
 ) -> tuple[str, float, float]:
     return render_table_svg(_diversity_single_split_columns(header), rows,
                             group_headers=None, title=None, footnote=[])
-
 
 def _collapse_repeated_groups(rows: list[dict], key: str = "Species") -> list[dict]:
     """Return a copy of `rows` where each consecutive run with the same
@@ -409,8 +374,8 @@ def _collapse_repeated_groups(rows: list[dict], key: str = "Species") -> list[di
     if not rows:
         return rows
     out = [dict(r) for r in rows]
-    # Identify group spans.
-    groups: list[tuple[int, int, object]] = []  # (start, end_inclusive, value)
+
+    groups: list[tuple[int, int, object]] = []
     start = 0
     cur = out[0].get(key)
     for i in range(1, len(out)):
@@ -420,8 +385,7 @@ def _collapse_repeated_groups(rows: list[dict], key: str = "Species") -> list[di
             start = i
             cur = v
     groups.append((start, len(out) - 1, cur))
-    # Blank every row's group cell, then write the value back at the
-    # middle row of each group. Mark a separator on each non-first group.
+
     for r in out:
         r[key] = ""
     for gi, (s, e, val) in enumerate(groups):
@@ -430,7 +394,6 @@ def _collapse_repeated_groups(rows: list[dict], key: str = "Species") -> list[di
         if gi > 0:
             out[s]["_separator"] = True
     return out
-
 
 def _half_split_with_species_snap(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     """Split rows in two roughly equal halves. If a species transition sits
@@ -448,11 +411,6 @@ def _half_split_with_species_snap(rows: list[dict]) -> tuple[list[dict], list[di
         if abs(nearest - mid) <= 3:
             mid = nearest
     return rows[:mid], rows[mid:]
-
-
-# build_diversity_val_html_svg removed - main() now calls
-# _build_diversity_single_split_html_svg directly with already-filtered rows.
-
 
 def build_diversity_train_parallel_html_svg(
         rows_a: list[dict], rows_b: list[dict]
@@ -479,7 +437,6 @@ def build_diversity_train_parallel_html_svg(
     )
     return combined, wa + gap_mm + wb, max(ha, hb)
 
-
 def build_diversity_test_html_svg(test_rows: list[dict]) -> tuple[str, float, float]:
     """Test half of the dataset-composition table. Rows must already be the
     pre-filtered (Species, Genotype, In-distribution Test, Out-of-distribution Test,
@@ -494,7 +451,6 @@ def build_diversity_test_html_svg(test_rows: list[dict]) -> tuple[str, float, fl
     return render_table_svg(columns, test_rows,
                             group_headers=None,
                             title=None, footnote=[])
-
 
 def build_annotator_table() -> tuple[list[dict], list[str]]:
     """Inter-annotator agreement table: per-class IoU for each of the 16
@@ -535,11 +491,10 @@ def build_annotator_table() -> tuple[list[dict], list[str]]:
         sp = r.get("species", "")
         mic = r.get("microscope", "")
         sid = r.get("sample_id", "")
-        # Strip the "{raw_species}_{microscope}_" prefix.
+
         raw_prefix = f"{sid.split('_', 1)[0]}_{mic}_"
         tail = sid[len(raw_prefix):] if sid.startswith(raw_prefix) else sid
-        # Prefer the curated genotype from the diversity spreadsheet; fall
-        # back to a heuristic stripped sample identifier if not found.
+
         genotype = genotype_map.get(_normalize_uid(sid))
         if not genotype:
             genotype = re.sub(r"^Exp\d+_", "", tail)
@@ -572,7 +527,6 @@ def build_annotator_table() -> tuple[list[dict], list[str]]:
     fields = list(out[0].keys())
     return out, fields
 
-
 def build_per_class_by_group_table() -> tuple[list[dict], list[str]]:
     """Merged panel d + e + by-species per-class table. Two sections:
 
@@ -604,9 +558,7 @@ def build_per_class_by_group_table() -> tuple[list[dict], list[str]]:
         return row
 
     out = []
-    # ── By species ────────────────────────────────────────────────────
-    # The split-source qualifier (Rice pools both test sets; the others use
-    # in-distribution only) is described in the caption, not the row label.
+
     for sp in SPECIES_ORDER:
         if sp == "Rice":
             sub = [r for r in miou_rows if r["species"] == sp]
@@ -614,7 +566,6 @@ def build_per_class_by_group_table() -> tuple[list[dict], list[str]]:
             sub = [r for r in test if r["species"] == sp]
         out.append(_make_row(SPECIES_LABEL[sp], sub, "Species"))
 
-    # ── By microscope ─────────────────────────────────────────────────
     for mic, split, label in MICROSCOPE_ROWS:
         sub = [r for r in miou_rows
                if r["microscope"] == mic and r["split"] == split]
@@ -623,13 +574,11 @@ def build_per_class_by_group_table() -> tuple[list[dict], list[str]]:
     fields = list(out[0].keys())
     return out, fields
 
-
 def write_csv(rows: list[dict], fields: list[str], path: Path) -> None:
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerows(rows)
-
 
 def write_markdown(rows: list[dict], fields: list[str], path: Path,
                    title: str, caption: str) -> None:
@@ -640,39 +589,28 @@ def write_markdown(rows: list[dict], fields: list[str], path: Path,
         lines.append("| " + " | ".join(str(r[f]) for f in fields) + " |")
     path.write_text("\n".join(lines) + "\n")
 
-
-# ─── Nature-style SVG table renderer ────────────────────────────────────────
-# Booktabs convention: thick top + bottom rules, thin midrule under the
-# column-header row, thin cmidrule spans under group-header text, NO vertical
-# rules anywhere. Helvetica everywhere (paper-wide convention).
-
-# All body text and headers are 7 pt Helvetica (= 2.469 mm at 1 pt = 0.3528 mm).
-# Row / header / line heights are sized so the 7 pt cap-height + descender
-# leaves the canonical Nature-style 0.5 mm gap above the midrule.
-T_RULE   = 0.40   # mm: top and bottom rules (booktabs \toprule / \bottomrule)
-M_RULE   = 0.20   # mm: midrule and cmidrule
-ROW_H    = 6.0    # mm: data row height
-HDR_H    = 5.4    # mm: column-header row height (single line)
-LINE_H   = 3.1    # mm: additional height per extra line in a multi-line header
-GRP_H    = 5.4    # mm: group-header row height
-SEC_H    = 5.4    # mm: section-divider row height (table d/e)
-TITLE_H  = 6.0    # mm: title row above the table
-FOOT_H   = 4.4    # mm: footnote line height
-SIDE_PAD = 3.0    # mm: left + right canvas padding
-CELL_PAD = 0.8    # mm: horizontal pad inside each cell
-FONT_BODY  = 2.47 # mm ≈ 7 pt
-FONT_HDR   = 2.47 # mm ≈ 7 pt bold
-FONT_GRP   = 2.47 # mm ≈ 7 pt bold
-FONT_TITLE = 2.65 # mm ≈ 7.5 pt bold (unused: titles are removed)
-FONT_FOOT  = 2.10 # mm ≈ 6 pt (unused: footnotes are removed)
-FONT_SEC   = 2.47 # mm ≈ 7 pt bold italic (section dividers)
-
+T_RULE   = 0.40
+M_RULE   = 0.20
+ROW_H    = 6.0
+HDR_H    = 5.4
+LINE_H   = 3.1
+GRP_H    = 5.4
+SEC_H    = 5.4
+TITLE_H  = 6.0
+FOOT_H   = 4.4
+SIDE_PAD = 3.0
+CELL_PAD = 0.8
+FONT_BODY  = 2.47
+FONT_HDR   = 2.47
+FONT_GRP   = 2.47
+FONT_TITLE = 2.65
+FONT_FOOT  = 2.10
+FONT_SEC   = 2.47
 
 def _esc(s: str) -> str:
     return (str(s).replace("&", "&amp;")
                   .replace("<", "&lt;")
                   .replace(">", "&gt;"))
-
 
 def _render_inline(s) -> str:
     """Render text that may contain `*italic*` substrings into SVG-safe
@@ -695,7 +633,6 @@ def _render_inline(s) -> str:
             out.append(_esc(p))
     return "".join(out)
 
-
 def _text(x: float, y: float, s: str, *, size=FONT_BODY,
           anchor="middle", weight="normal", style="normal",
           fill="black") -> str:
@@ -705,18 +642,16 @@ def _text(x: float, y: float, s: str, *, size=FONT_BODY,
             f'text-anchor="{anchor}"{weight_attr}{style_attr} '
             f'fill="{fill}">{_render_inline(s)}</text>')
 
-
 def _line(x1, y1, x2, y2, w) -> str:
     return (f'<line x1="{x1:.3f}" y1="{y1:.3f}" x2="{x2:.3f}" y2="{y2:.3f}" '
             f'stroke="black" stroke-width="{w}"/>')
-
 
 def render_table_svg(
     columns: list[dict],
     rows: list[dict],
     *,
-    group_headers: list[dict] = None,   # [{label, start, end}]  (col idx inclusive)
-    section_dividers: list[dict] = None, # [{row, label}]  row = data-row idx where divider sits ABOVE it
+    group_headers: list[dict] = None,
+    section_dividers: list[dict] = None,
     title: str = None,
     footnote: list[str] = None,
 ) -> tuple[str, float, float]:
@@ -733,19 +668,17 @@ def render_table_svg(
     table_w = sum(c["width_mm"] for c in columns)
     canvas_w = table_w + 2 * SIDE_PAD
 
-    # Vertical layout
     y = 0.0
     if title:
         y += TITLE_H
     y_top = y
     has_group = bool(group_headers)
     if has_group:
-        y += GRP_H + 0.2     # +cmidrule gap
+        y += GRP_H + 0.2
 
-    # Account for section dividers inside the data block.
     n_dividers = len(section_dividers)
     data_h = len(rows) * ROW_H + n_dividers * SEC_H
-    # Multi-line column headers grow HDR_H by LINE_H per extra line.
+
     def _hdr_lines(label):
         return label if isinstance(label, (list, tuple)) else [label]
     n_lines_max = max(len(_hdr_lines(c["label"])) for c in columns)
@@ -756,12 +689,10 @@ def render_table_svg(
 
     parts = []
 
-    # Title
     if title:
         parts.append(_text(SIDE_PAD, TITLE_H - 1.2, title,
                            size=FONT_TITLE, anchor="start", weight="bold"))
 
-    # Column x ranges
     x_starts = [SIDE_PAD]
     for c in columns:
         x_starts.append(x_starts[-1] + c["width_mm"])
@@ -775,10 +706,8 @@ def render_table_svg(
             return x1 - CELL_PAD, "end"
         return (x0 + x1) / 2, "middle"
 
-    # Top rule
     parts.append(_line(SIDE_PAD, y_top, SIDE_PAD + table_w, y_top, T_RULE))
 
-    # Group headers + cmidrule
     if has_group:
         y_gtext = y_top + GRP_H - 1.2
         y_cmid  = y_top + GRP_H + 0.2
@@ -791,9 +720,6 @@ def render_table_svg(
                                size=FONT_GRP, anchor="middle", weight="bold"))
             parts.append(_line(gx0 + 0.5, y_cmid, gx1 - 0.5, y_cmid, M_RULE))
 
-    # Column headers. Multi-line labels (label given as list/tuple) stack
-    # from the bottom up, so the last line of every header sits on the
-    # same baseline regardless of how many lines that header has.
     y_hdr_top = (y_top + GRP_H + 0.2) if has_group else y_top
     y_last_baseline = y_hdr_top + effective_hdr_h - 1.2
     for i, c in enumerate(columns):
@@ -804,17 +730,14 @@ def render_table_svg(
             parts.append(_text(tx, y_line, line,
                                size=FONT_HDR, anchor=ta, weight="bold"))
 
-    # Midrule under column headers
     y_midrule = y_hdr_top + effective_hdr_h + 0.2
     parts.append(_line(SIDE_PAD, y_midrule, SIDE_PAD + table_w, y_midrule, M_RULE))
 
-    # Body rows (interleave section dividers and group separators)
     div_at = {d["row"]: d["label"] for d in section_dividers}
     y_cursor = body_top
     for ridx, row in enumerate(rows):
         if ridx in div_at:
-            # Italic section title centred over the table, with a thin
-            # rule below it (booktabs-style internal break).
+
             cx = SIDE_PAD + table_w / 2
             parts.append(_text(SIDE_PAD + CELL_PAD,
                                y_cursor + SEC_H - 1.4,
@@ -824,13 +747,11 @@ def render_table_svg(
             y_cursor += SEC_H
             parts.append(_line(SIDE_PAD, y_cursor - 0.1,
                                SIDE_PAD + table_w, y_cursor - 0.1, M_RULE))
-        # Thin rule above this row if it begins a new sub-group (e.g. a
-        # new Species after the previous block). The special `_separator`
-        # key on the row triggers it.
+
         if row.get("_separator"):
             parts.append(_line(SIDE_PAD, y_cursor,
                                SIDE_PAD + table_w, y_cursor, M_RULE))
-        # Render the data row
+
         ybase = y_cursor + ROW_H - 1.4
         for i, c in enumerate(columns):
             if c["key"].startswith("_"):
@@ -840,10 +761,8 @@ def render_table_svg(
             parts.append(_text(tx, ybase, val, size=FONT_BODY, anchor=ta))
         y_cursor += ROW_H
 
-    # Bottom rule
     parts.append(_line(SIDE_PAD, y_bottom, SIDE_PAD + table_w, y_bottom, T_RULE))
 
-    # Footnote
     y_fn = y_bottom + FOOT_H - 0.5
     for line in footnote:
         parts.append(_text(SIDE_PAD, y_fn, line,
@@ -853,13 +772,7 @@ def render_table_svg(
     svg_inner = "\n".join(parts)
     return svg_inner, canvas_w, canvas_h
 
-
-# Standard physical canvas width for every saved table figure (mm). Tables
-# narrower than this are padded with whitespace and centred so that, when
-# all four tables are dropped into the manuscript at the same column width,
-# none of them need to be rescaled and 7 pt stays 7 pt across the whole set.
 CANVAS_W_MM = 180.0
-
 
 def wrap_html(svg_inner: str, w_mm: float, h_mm: float,
               filename_stem: str, title_tag: str) -> str:
@@ -1016,7 +929,6 @@ document.getElementById("save-svg").addEventListener("click", saveSVG);
 </html>
 """
 
-
 def build_bc_html_svg(rows_bc: list[dict]) -> tuple[str, float, float]:
     """Compact Nature-style table for panels b + c. IoU mean ± s.d. across
     samples for the in-distribution test split, inter-annotator baseline,
@@ -1042,19 +954,18 @@ def build_bc_html_svg(rows_bc: list[dict]) -> tuple[str, float, float]:
                             group_headers=None,
                             title=None, footnote=[])
 
-
 def build_annotator_html_svg(rows_ann: list[dict]) -> tuple[str, float, float]:
     """Side-by-side table: for each of the 16 re-annotated samples show the
     model-vs-GT IoU and the second-annotator-vs-GT IoU per class, plus the
     sample-level mIoU pair. Class names span two narrow sub-columns
     (Model / Human) via group headers + cmidrules."""
-    sub_w = 9    # mm per Model or Human sub-column at 7 pt
+    sub_w = 9
     columns = [
         {"key": "Species",    "label": "Species",    "width_mm": 13, "align": "start"},
         {"key": "Microscope", "label": "Microscope", "width_mm": 15, "align": "start"},
         {"key": "Genotype",   "label": "Genotype",   "width_mm": 18, "align": "start"},
     ]
-    # Six anatomy classes, then mIoU. Each spans a Model / Human pair.
+
     groups = []
     for c in CLASSES:
         idx = len(columns)
@@ -1069,7 +980,6 @@ def build_annotator_html_svg(rows_ann: list[dict]) -> tuple[str, float, float]:
     return render_table_svg(columns, rows_ann,
                             group_headers=groups,
                             title=None, footnote=[])
-
 
 def build_de_html_svg(rows_de: list[dict]) -> tuple[str, float, float]:
     """Compact Nature-style table merging the previous panel d/e mIoU table
@@ -1109,7 +1019,6 @@ def build_de_html_svg(rows_de: list[dict]) -> tuple[str, float, float]:
                             section_dividers=section_dividers,
                             title=None, footnote=[])
 
-
 def main() -> None:
     rows_bc, fields_bc   = build_per_class_table()
     rows_de, fields_de   = build_per_class_by_group_table()
@@ -1132,11 +1041,6 @@ def main() -> None:
     md_div_test    = HERE / "supp_table_dataset_diversity_test.md"
     md_ann  = HERE / "supp_table_annotator_baseline.md"
 
-    # Combined train+val rows: include any genotype with at least one sample
-    # in either training or validation, so the merged table captures
-    # everything the model was exposed to during training. Sorted in the
-    # same monocots-then-Solanums order; split in two halves for the
-    # parallel side-by-side layout.
     div_trainval_all = []
     for r in rows_div:
         t, v = (r.get("Train") or 0), (r.get("Val") or 0)
@@ -1179,7 +1083,7 @@ def main() -> None:
         "species) on the in-distribution test split (n=185 samples; panel b) "
         "and on the Zeiss out-of-distribution split (n=35 samples; panel c). Aerenchyma "
         "is reported only over samples in which the class is present (tomato "
-        "samples are excluded). Whole Root is omitted per project convention; "
+        "samples are excluded). Whole Root is omitted; "
         "it scores ~0.98 IoU across all splits and contributes no signal "
         "between models.",
     )
@@ -1261,13 +1165,10 @@ def main() -> None:
         "supplementary tables.",
     )
 
-    # ── HTML figure tables ────────────────────────────────────────────
     svg_bc, w_bc, h_bc    = build_bc_html_svg(rows_bc)
     svg_de, w_de, h_de    = build_de_html_svg(rows_de)
     svg_f,  w_f,  h_f     = build_panel_f_html_svg(rows_f)
-    # Collapse repeated Species names + insert thin rules between groups,
-    # purely for visual rendering. The CSV/MD outputs above keep every row
-    # explicit (so downstream programs can sort/filter them freely).
+
     div_train_a_v = _collapse_repeated_groups(div_train_a)
     div_train_b_v = _collapse_repeated_groups(div_train_b)
     div_test_v    = _collapse_repeated_groups(div_test_rows)
@@ -1302,7 +1203,6 @@ def main() -> None:
         svg_ann, w_ann, h_ann, "supp_table_annotator_baseline",
         "Supplementary Table: inter-annotator baseline"))
 
-    # Remove the superseded combined / monocots-vs-solanums train tables.
     for stale in [
         HERE / "supp_table_dataset_diversity.csv",
         HERE / "supp_table_dataset_diversity.md",
@@ -1310,19 +1210,17 @@ def main() -> None:
         HERE / "supp_table_dataset_diversity_train_val.csv",
         HERE / "supp_table_dataset_diversity_train_val.md",
         HERE / "supp_table_dataset_diversity_train_val.html",
-        # Note: the bare "_train.csv/.md" files predate the merged figure
-        # and were the single-split outputs; they have been re-introduced
-        # for the parallel HTML so DO NOT delete them here.
+
         HERE / "supp_table_dataset_diversity_train_monocots.csv",
         HERE / "supp_table_dataset_diversity_train_monocots.md",
         HERE / "supp_table_dataset_diversity_train_monocots.html",
         HERE / "supp_table_dataset_diversity_train_solanums.csv",
         HERE / "supp_table_dataset_diversity_train_solanums.md",
         HERE / "supp_table_dataset_diversity_train_solanums.html",
-        # Superseded by the merged side-by-side train table.
+
         HERE / "supp_table_dataset_diversity_train_part1.html",
         HERE / "supp_table_dataset_diversity_train_part2.html",
-        # Val is now merged into the train table.
+
         HERE / "supp_table_dataset_diversity_val.csv",
         HERE / "supp_table_dataset_diversity_val.md",
         HERE / "supp_table_dataset_diversity_val.html",
@@ -1330,13 +1228,12 @@ def main() -> None:
         if stale.exists():
             stale.unlink()
 
-    # Remove the now-superseded standalone per-species-only table.
     for stale in [
         HERE / "supp_table_per_class_iou_by_species.csv",
         HERE / "supp_table_per_class_iou_by_species.md",
         HERE / "supp_table_per_class_iou_by_species.html",
-        HERE / "supp_table_fig2de_sample_miou.csv",   # legacy clean-up
-        HERE / "supp_table_fig2de_sample_miou.md",    # legacy clean-up
+        HERE / "supp_table_fig2de_sample_miou.csv",
+        HERE / "supp_table_fig2de_sample_miou.md",
     ]:
         if stale.exists():
             stale.unlink()
@@ -1358,7 +1255,6 @@ def main() -> None:
     print("Open each HTML via `python3 -m http.server` "
           "(or directly in browser since no external CSV is loaded), "
           "then click Save PNG / Save SVG.")
-
 
 if __name__ == "__main__":
     main()

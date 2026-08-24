@@ -9,7 +9,6 @@ from .dataset import SampleRegistry
 MONOCOT_SPECIES = {"Millet", "Rice", "Sorghum"}
 DICOT_SPECIES = {"Tomato"}
 
-# Strategy -> species filter (None = no filter = all species)
 STRATEGY_SPECIES = {
     "A": None,
     "B-mono": MONOCOT_SPECIES,
@@ -17,13 +16,12 @@ STRATEGY_SPECIES = {
     "oneshot": None,
 }
 
-
 def get_split(
     strategy: str = "A",
-    registry: Optional["SampleRegistry"] = None,  # noqa: ARG001
-    seed: int = 42,  # noqa: ARG001
+    registry: Optional["SampleRegistry"] = None,
+    seed: int = 42,
     species: Optional[str] = None,
-    cache: bool = True,  # noqa: ARG001
+    cache: bool = True,
     **_kwargs,
 ) -> Dict[str, List[SampleRecord]]:
     """Load dataset split from physical train/val/test directories.
@@ -46,7 +44,6 @@ def get_split(
 
     strategy_filter = STRATEGY_SPECIES[strategy]
 
-    # Oneshot strategy: use oneshot dir as "test", empty train/val
     if strategy == "oneshot":
         reg = SampleRegistry(data_dir=ONESHOT_DIR, require_annotations=True)
         samples = reg.samples
@@ -65,7 +62,6 @@ def get_split(
         split[subset] = samples
 
     return split
-
 
 def print_split_summary(split: Dict[str, List[SampleRecord]]) -> None:
     """Print summary statistics for a split."""

@@ -13,9 +13,7 @@ from src.preprocessing import load_sample_normalized, to_uint8
 from src.annotation_utils import load_sample_annotations
 from src.splits import get_split, print_split_summary
 
-
 from src.model_classes import fill_contours
-
 
 def compute_val_iou_dice(model, val_samples, img_size):
     per_class = {c: {"inter": 0, "union": 0, "pred": 0, "gt": 0} for c in ANNOTATED_CLASSES}
@@ -52,7 +50,6 @@ def compute_val_iou_dice(model, val_samples, img_size):
         dice[name] = 2 * s["inter"] / denom if denom > 0 else 0.0
     return iou, dice
 
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="yolo26m-seg")
@@ -78,7 +75,6 @@ def main():
     else:
         print(f"Dataset already at {export_dir}")
 
-    # Let YOLO create the run directory via project + name
     project_dir = str(OUTPUT_DIR / "runs" / "yolo" / f"{args.model}_ablation")
     run_name = args.condition_name
 
@@ -94,7 +90,6 @@ def main():
                     ch = random.randint(0, C - 1)
                     imgs[i, ch] = 0
 
-    # Monkey-patch preprocess_batch to add channel dropout
     if dropout_p > 0:
         from ultralytics.models.yolo.segment.train import SegmentationTrainer
         _orig_preprocess = SegmentationTrainer.preprocess_batch
@@ -110,8 +105,6 @@ def main():
             return batch
         SegmentationTrainer.preprocess_batch = _preprocess_with_dropout
 
-    # TensorBoard + val IoU
-    # We'll set up TB after train creates the directory
     val_samples = split.get("val", [])
     iou_csv_written = [False]
     tb_writer = [None]
@@ -168,11 +161,9 @@ def main():
     if tb_writer[0]:
         tb_writer[0].close()
 
-    # Save hparams
     run_dir = Path(project_dir) / run_name
     save_hparams(run_dir, args)
 
-    # Test eval
     best_path = run_dir / "weights" / "best.pt"
     test_samples = split.get("test", [])
     if best_path.exists() and test_samples:

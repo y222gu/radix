@@ -52,16 +52,12 @@ from src.splits import get_split, print_split_summary
 
 import segmentation_models_pytorch as smp
 
-NUM_CLASSES = 6  # raw annotation classes 0-5
+NUM_CLASSES = 6
 CLASS_NAMES = list(ANNOTATED_CLASSES.values())
 
-# Per-class pos_weight for BCE: higher for thin/rare structures
 DEFAULT_POS_WEIGHTS = [1.0, 10.0, 5.0, 1.0, 5.0, 1.0]
-#                      Root  Aer   O.Endo I.Endo O.Exo I.Exo
 
-# bioimage.io model for pretrained weights
 PRETRAINED_MODEL_ID = "laid-back-lobster"
-
 
 def load_pretrained_weights(model, model_id):
     """Load pretrained PanSeg UNet weights with channel replication.
@@ -80,13 +76,12 @@ def load_pretrained_weights(model, model_id):
 
     All other layers: loaded exactly (shapes match).
     """
-    from bioimageio.core import predict as _unused  # triggers model download
+    from bioimageio.core import predict as _unused
     from bioimageio.spec import load_model_description
     import glob, os
 
     md = load_model_description(model_id)
 
-    # Find cached weights
     cache_dir = os.path.expanduser("~/.cache/bioimageio")
     ts_files = sorted(glob.glob(f"{cache_dir}/**/torchscript_tracing.pt", recursive=True))
     pt_files = sorted(glob.glob(f"{cache_dir}/**/*.pytorch", recursive=True))
@@ -100,7 +95,7 @@ def load_pretrained_weights(model, model_id):
         ts_model = torch.jit.load(ts_files[-1], map_location="cpu")
         pretrained_dict = ts_model.state_dict()
     else:
-        # Trigger download by running a dummy prediction
+
         import numpy as np, xarray as xr
         dummy = xr.DataArray(np.zeros((1, 1, 64, 64), dtype=np.float32),
                              dims=["batch", "channel", "y", "x"])
@@ -128,25 +123,24 @@ def load_pretrained_weights(model, model_id):
 
         target = model_dict[name]
         if param.shape == target.shape:
-            # Exact match — load directly
+
             model_dict[name] = param
             loaded += 1
         elif (param.dim() >= 2 and target.dim() >= 2
               and param.shape[0] == target.shape[0]
               and param.shape[1] == 1 and target.shape[1] == 3):
-            # First conv: (out, 1, k, k) → replicate to (out, 3, k, k) ÷ 3
+
             model_dict[name] = param.repeat(1, 3, 1, 1) / 3.0
             replicated += 1
             print(f"  Replicated: {name} {param.shape} → {target.shape} (÷3)")
         else:
-            # Shape mismatch (e.g., last conv 1→6): skip entirely, keep random init
+
             skipped_shape += 1
             print(f"  Skipped (shape mismatch): {name} {param.shape} → {target.shape}")
 
     model.load_state_dict(model_dict)
     print(f"  Loaded {loaded}, replicated {replicated}, "
           f"skipped {skipped_missing} missing + {skipped_shape} shape mismatch")
-
 
 class PlantSegModule(pl.LightningModule):
     """6-class multilabel segmentation using PanSeg UNet2D architecture."""
@@ -169,8 +163,6 @@ class PlantSegModule(pl.LightningModule):
         self.scheduler_name = scheduler
         self.eta_min = eta_min
 
-        # PanSeg UNet2D: 3 input channels, 6 output channels, NO final sigmoid
-        # (sigmoid is handled by bce_with_logits for numerical stability)
         self.model = UNet2D(
             in_channels=3,
             out_channels=NUM_CLASSES,
@@ -189,20 +181,19 @@ class PlantSegModule(pl.LightningModule):
             print("Loading pretrained PanSeg weights...")
             load_pretrained_weights(self.model, PRETRAINED_MODEL_ID)
 
-        # Loss: BCE + Dice
         pw = pos_weight if pos_weight is not None else DEFAULT_POS_WEIGHTS
         self.register_buffer("pos_weight", torch.tensor(pw, dtype=torch.float32))
         self.dice_loss = smp.losses.DiceLoss(mode="multilabel")
 
     def forward(self, x):
-        # x is (B, 3, H, W) float32 [0, 1] from UNetMultilabelDataset
-        return self.model(x)  # raw logits (B, 6, H, W)
+
+        return self.model(x)
 
     def _shared_step(self, batch, stage):
         images = batch["image"]
         masks = batch["mask"]
 
-        logits = self(images)  # raw logits, no sigmoid
+        logits = self(images)
         bce = F.binary_cross_entropy_with_logits(
             logits, masks, pos_weight=self.pos_weight.view(1, -1, 1, 1))
         dice = self.dice_loss(logits, masks)
@@ -238,7 +229,6 @@ class PlantSegModule(pl.LightningModule):
             scheduler = torch.optim.lr_scheduler.StepLR(
                 optimizer, step_size=max(self.trainer.max_epochs // 3, 1), gamma=0.1)
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
-
 
 class EpochLogger(Callback):
     """Print epoch summary + compute val IoU every N epochs."""
@@ -313,7 +303,6 @@ class EpochLogger(Callback):
                         self.iou_csv_written = True
                     writer.writerow(row)
 
-
 def main():
     parser = argparse.ArgumentParser(
         description="Fine-tune PanSeg UNet2D for 6-class multilabel segmentation")
@@ -368,7 +357,6 @@ def main():
         pos_weight=args.pos_weight,
     )
 
-    # Count parameters
     total_params = sum(p.numel() for p in model.parameters())
     print(f"\nTotal params: {total_params:,}")
 
@@ -421,7 +409,6 @@ def main():
 
     trainer.fit(model, train_dl, val_dl)
 
-    # Plot loss curves
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -458,13 +445,11 @@ def main():
         fig.savefig(run_dir / "loss_curve.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
 
-    # Test
     print("\n" + "=" * 60)
     print("EVALUATING ON TEST SET")
     trainer.logger = False
     test_results = trainer.test(model, test_dl, ckpt_path="best")
     print(f"Test results: {test_results}")
-
 
 if __name__ == "__main__":
     main()

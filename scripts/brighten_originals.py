@@ -24,18 +24,17 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "figures_for_paper" / "figure3"))
 
-from src.preprocessing import load_sample_normalized                     # noqa: E402
-from src.augmentation import get_val_transform                           # noqa: E402
-from generate_dense_features import (                                    # noqa: E402
+from src.preprocessing import load_sample_normalized
+from src.augmentation import get_val_transform
+from generate_dense_features import (
     parse_uid, find_sample, save_png,
 )
-from scripts.render_science_art_pred_pca import (                        # noqa: E402
+from scripts.render_science_art_pred_pca import (
     INPUT_SIZE, OUT_ROOT, N_SAMPLES, build_montage, collect_uids, square_stretch,
 )
 
 NOISE_SIGMA_PX = 0.5
 
-# Params from the interactive HTML tool — match its pipeline exactly.
 PARAMS = {
     "bgFloor": 0.0,
     "sigK":    0.0,
@@ -46,14 +45,12 @@ PARAMS = {
     "scaleT":  1.4,
 }
 
-
 def sigmoid_contrast(x: np.ndarray, k: float, mid: float) -> np.ndarray:
     """Symmetric sigmoid mapped so x∈[0,1] → out∈[0,1] with f(0)=0, f(1)=1."""
     raw = 1.0 / (1.0 + np.exp(-k * (x - mid)))
     lo = 1.0 / (1.0 + np.exp(-k * (0.0 - mid)))
     hi = 1.0 / (1.0 + np.exp(-k * (1.0 - mid)))
     return np.clip((raw - lo) / max(hi - lo, 1e-6), 0, 1)
-
 
 def brighten_channel(ch: np.ndarray, scale: float) -> np.ndarray:
     """Smooth → bg-subtract → optional sigmoid → gamma → scale.
@@ -68,7 +65,6 @@ def brighten_channel(ch: np.ndarray, scale: float) -> np.ndarray:
         out = np.power(out, PARAMS["gamma"])
     return (out * scale).astype(np.float32)
 
-
 def bright_composite_paper(img_norm: np.ndarray) -> np.ndarray:
     """Channel order in img_norm is (TRITC, FITC, DAPI). Apply per-channel
     brighten, then blend per Fig 1c convention (DAPI=cyan, FITC=yellow,
@@ -77,11 +73,10 @@ def bright_composite_paper(img_norm: np.ndarray) -> np.ndarray:
     fitc  = brighten_channel(img_norm[..., 1], PARAMS["scaleF"])
     dapi  = brighten_channel(img_norm[..., 2], PARAMS["scaleD"])
     comp = np.zeros_like(img_norm)
-    comp[..., 1] += dapi;  comp[..., 2] += dapi    # DAPI  → cyan
-    comp[..., 0] += fitc;  comp[..., 1] += fitc    # FITC  → yellow
-    comp[..., 0] += tritc                          # TRITC → red
+    comp[..., 1] += dapi;  comp[..., 2] += dapi
+    comp[..., 0] += fitc;  comp[..., 1] += fitc
+    comp[..., 0] += tritc
     return np.clip(comp, 0, 1)
-
 
 def main():
     val_transform = get_val_transform(INPUT_SIZE)
@@ -99,7 +94,6 @@ def main():
 
     print("\nRebuilding montage …")
     build_montage(uids)
-
 
 if __name__ == "__main__":
     main()

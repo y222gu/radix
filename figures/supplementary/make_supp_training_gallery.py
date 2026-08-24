@@ -29,11 +29,6 @@ from scipy.ndimage import convolve
 
 DIVERSITY_CSV = Path(__file__).resolve().parent / "diversity_counts.csv"
 
-
-# ── Per-microscope image boost (mirrors fig1c / fig2a SVG filters) ──────────
-# Olympus: gamma 1.0526 → linear slope 1.84 / intercept -0.03 → saturate 1.2.
-# C10:     gamma 1.1111 → linear slope 1.15 / intercept -0.165 → saturate 1.1
-#          → light 3×3 sharpening kernel.
 _C10_SHARPEN = np.array([
     [ 0.0, -0.2,  0.0],
     [-0.2,  1.8, -0.2],
@@ -41,15 +36,12 @@ _C10_SHARPEN = np.array([
 ], dtype=np.float32)
 _LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 
-
 def _saturate(rgb01: np.ndarray, factor: float) -> np.ndarray:
     gray = rgb01 @ _LUMA
     return gray[..., None] + factor * (rgb01 - gray[..., None])
 
-
 def _norm_uid(s: str) -> str:
     return re.sub(r"_+", "_", s) if s else s
-
 
 def _cell_to_str(v) -> str:
     if v is None:
@@ -57,7 +49,6 @@ def _cell_to_str(v) -> str:
     if isinstance(v, float) and v.is_integer():
         return str(int(v))
     return str(v).strip()
-
 
 def load_species_genotype_map() -> dict:
     import csv as _csv
@@ -72,7 +63,6 @@ def load_species_genotype_map() -> dict:
             out[_norm_uid(uid)] = (r.get("species", ""), r.get("genotype", ""))
     return out
 
-
 def format_species(sp_raw: str) -> str:
     """Solanum_X → 'S. X' (italic genus + species); other species pass through."""
     if not sp_raw:
@@ -81,23 +71,15 @@ def format_species(sp_raw: str) -> str:
         return "S. " + sp_raw.replace("Solanum_", "")
     return sp_raw
 
-
 def format_genotype(g_raw: str) -> str:
-    """Strip the trailing 'mutant' word; apply paper-facing spelling fixes;
-    otherwise keep the spreadsheet value.
-
-    Known fixes (per `project_kitaake_spelling` memory):
-      - Rice cultivar: spreadsheet says 'Kittake' but the correct paper
-        spelling is 'Kitaake' (single t, double a). The rename is applied
-        here, in the shared helper, so every figure / table picks it up.
+    """Strip the trailing 'mutant' word and normalise cultivar spelling
+    ('Kittake' -> 'Kitaake'); otherwise keep the spreadsheet value.
     """
     if not g_raw:
         return ""
     g = re.sub(r"[_\s]*mutants?[_\s]*$", "", g_raw).strip()
-    # Paper-facing spelling fixes.
     g = g.replace("Kittake", "Kitaake")
     return g
-
 
 def compose_label(uid: str, species_genotype_map: dict) -> str:
     key = _norm_uid(uid)
@@ -107,7 +89,6 @@ def compose_label(uid: str, species_genotype_map: dict) -> str:
     if sp and gt:
         return f"{sp}, {gt}"
     return sp or gt or uid
-
 
 def species_and_genotype(uid: str, species_genotype_map: dict
                         ) -> tuple[str, str, bool]:
@@ -124,7 +105,6 @@ def species_and_genotype(uid: str, species_genotype_map: dict
                   and re.search(r"[a-z]", gt))
     return sp, gt, italic
 
-
 def boost_for_microscope(img_uint8: np.ndarray, microscope: str) -> np.ndarray:
     """Apply the same brightness / saturation / sharpening chain that Fig 1c
     and Fig 2a use, in numpy. Input/output are uint8 HxWx3 arrays."""
@@ -137,7 +117,7 @@ def boost_for_microscope(img_uint8: np.ndarray, microscope: str) -> np.ndarray:
         x = np.clip(x, 0, 1) ** 1.1111
         x = 1.15 * x - 0.165
         x = _saturate(x, 1.1)
-        # Per-channel sharpening.
+
         sharp = np.empty_like(x)
         for c in range(3):
             sharp[..., c] = convolve(x[..., c], _C10_SHARPEN, mode="reflect")
@@ -146,22 +126,14 @@ def boost_for_microscope(img_uint8: np.ndarray, microscope: str) -> np.ndarray:
     return (x * 255).astype(np.uint8)
 
 HERE = Path(__file__).resolve().parent
-FIG1C_DIR = HERE / "data"  # legacy alias, kept for downstream-import compat
+FIG1C_DIR = HERE / "data"
 UNCOVERED_DIR = HERE / "data"
 OUT_PATH = HERE / "supp_training_gallery_600dpi.png"
 
-# Final curated list of 48 training-set UIDs to show in the supplementary
-# gallery, ordered Rice → Sorghum → Solanums (= "Tomato" in raw UIDs) so
-# the 6 × 8 grid below fills row-major by species block:
-#   Row 1: 5 Rice (Olympus) + 1 Rice (C10)
-#   Rows 2-6: 30 Sorghum (Olympus)
-#   Row 7: 4 Sorghum (Olympus) + 1 Sorghum (C10) + 1 Solanums (Olympus)
-#   Row 8: 6 Solanums (Olympus)
 CURATED_UIDS = [
-    # Rice / Olympus  (psy1-17, psy1-9, Kittake / WT dropped)
+
     "Rice_Olympus_Exp6_Falcon_Wox10-50_1_02",
-    # Sorghum / Olympus  (235921 dropped; ETSL 101851, 101845, Dekeba,
-    # ETSL 100307, ETSL 100726 restored)
+
     "Sorghum_Olympus_Exp1_2_03",
     "Sorghum_Olympus_Exp2_1_02",
     "Sorghum_Olympus_Exp3_3_03",
@@ -195,9 +167,9 @@ CURATED_UIDS = [
     "Sorghum_Olympus_Exp56_4_02",
     "Sorghum_Olympus_Exp60_Control_19",
     "Sorghum_Olympus_Exp91_Control_05",
-    # Sorghum / C10
+
     "Sorghum_C10_Exp5_C7",
-    # Solanums / Olympus (slasft restored)
+
     "Tomato_Olympus_Exp5_Solanum_MajkenSlide1_09",
     "Tomato_Olympus_Exp5_Solanum_MajkenSlide1_44",
     "Tomato_Olympus_Exp10_Suberin_mutants_1-12_05",
@@ -208,8 +180,6 @@ CURATED_UIDS = [
 ]
 assert len(CURATED_UIDS) == 42, f"expected 42 UIDs, got {len(CURATED_UIDS)}"
 
-# Twelve sample UIDs already used in Figure 1c (see
-# figures_for_paper/figure1/make_fig1c_gallery.py).
 FIG1C_USED = {
     "Millet_Olympus_Exp5_1-2cm__71",
     "Rice_Olympus_Exp13_P-17-3_08",
@@ -225,9 +195,6 @@ FIG1C_USED = {
     "Tomato_C10_Exp3_M82_WT_E4ROI1",
 }
 
-# Group order = the species / microscope order used elsewhere in the paper.
-# "Tomato" in raw file names → "Solanum" lycopersicum and relatives in the
-# paper-facing label; underscores in genus binomials are rendered as spaces.
 GROUP_ORDER = [
     ("Millet",  "Olympus"),
     ("Rice",    "Olympus"),
@@ -247,26 +214,22 @@ GROUP_LABEL = {
     ("Tomato",  "C10"):     "Solanums\nC10",
 }
 
-
-# ── Canvas geometry (mm) ────────────────────────────────────────────────────
-CANVAS_W_MM   = 180.0     # Nature 2-column figure width
-SIDE_PAD_MM   = 2.0       # left + right canvas margin
-TOP_PAD_MM    = 4.5       # room above the first row for its top labels
+CANVAS_W_MM   = 180.0
+SIDE_PAD_MM   = 2.0
+TOP_PAD_MM    = 4.5
 BOT_PAD_MM    = 2.0
 COLS          = 6
 ROWS          = 7
-COL_GAP_MM    = 1.5       # horizontal gap between thumbnails
-ROW_GAP_MM    = 4.5       # vertical gap between rows (just big enough for the
-                          # two-line label sitting above each thumbnail)
+COL_GAP_MM    = 1.5
+ROW_GAP_MM    = 4.5
+
 DPI           = 600
 MM_PER_INCH   = 25.4
-
 
 def thumb_size_mm():
     """Edge length of each square thumbnail so the 6 columns fill 180 mm."""
     avail = CANVAS_W_MM - 2 * SIDE_PAD_MM
     return (avail - (COLS - 1) * COL_GAP_MM) / COLS
-
 
 def find_image_and_boost(uid: str):
     """Return (PIL.Image, needs_boost) for `uid`. Renders a paper-style
@@ -287,7 +250,6 @@ def find_image_and_boost(uid: str):
     arr = (np.clip(comp, 0, 1) * 255).astype(np.uint8)
     return Image.fromarray(arr), True
 
-
 def microscope_for(uid: str) -> str:
     if "_Olympus_" in uid:
         return "Olympus"
@@ -297,17 +259,10 @@ def microscope_for(uid: str) -> str:
         return "Zeiss"
     return ""
 
-
-# Microscope-native pixel calibration: how many native-TIF pixels correspond
-# to a 100 µm scale bar (provided by the lab). The same physical scale is
-# preserved through every rescale step because each thumbnail shows the
-# entire root cross-section that the raw TIF captured; the rescale ratio
-# (display_px / native_px) is folded in at draw time below.
 PX_PER_100UM = {"Olympus": 308, "C10": 308, "Zeiss": 217}
 
 _native_size_cache: dict[str, int] = {}
 _uid_to_record_cache: dict | None = None
-
 
 def _uid_to_record():
     """UID -> SampleRecord backed by the local supplementary/data/ folder."""
@@ -339,7 +294,6 @@ def _uid_to_record():
         _uid_to_record_cache = recs
     return _uid_to_record_cache
 
-
 def native_px_for(uid: str) -> int | None:
     """Width (pixels) of the raw native TIF for `uid`. Each raw TIF is a
     square crop of the root cross-section; native dimensions vary per
@@ -356,7 +310,6 @@ def native_px_for(uid: str) -> int | None:
     _native_size_cache[uid] = w
     return w
 
-
 def scale_bar_mm(uid: str, tile_w_mm: float) -> float | None:
     """Length in mm of a 100 µm scale bar inside a `tile_w_mm` thumbnail
     for the given sample. The image fills the whole tile, so
@@ -371,7 +324,6 @@ def scale_bar_mm(uid: str, tile_w_mm: float) -> float | None:
     if not n:
         return None
     return tile_w_mm * cal / n
-
 
 def draw_scale_bar(ax, sb_mm: float, tile_mm: float,
                     label_fontsize: float = 4.0,
@@ -389,7 +341,7 @@ def draw_scale_bar(ax, sb_mm: float, tile_mm: float,
     when the bar is short enough that a centered label overflows the
     image content)."""
     frac = sb_mm / tile_mm
-    # Don't let the bar exceed 80 % of the tile width.
+
     frac = min(frac, 0.80)
     x_start = x_end - frac
     ax.plot([x_start, x_end], [y_bar, y_bar],
@@ -408,7 +360,6 @@ def draw_scale_bar(ax, sb_mm: float, tile_mm: float,
             transform=ax.transAxes,
             path_effects=[path_effects.withStroke(linewidth=0.7,
                                                   foreground="black")])
-
 
 def main():
     sp_gt_map = load_species_genotype_map()
@@ -458,11 +409,6 @@ def main():
             arr = boost_for_microscope(arr, microscope_for(uid))
         ax.imshow(arr)
 
-        # Labels go *above* the thumbnail, in the row gap. y is in axes
-        # coordinates: y = 1.0 is the top of the thumbnail. Two lines are
-        # placed above: species/microscope on top, genotype just above the
-        # image. White Helvetica bold; genotype italic if it looks like a
-        # gene/allele name.
         sp_disp, gt_disp, gt_italic = species_and_genotype(uid, sp_gt_map)
         mic = microscope_for(uid)
         sp_mic = f"{sp_disp} / {mic}" if sp_disp and mic else (sp_disp or mic)
@@ -477,7 +423,6 @@ def main():
         if sp_mic:
             ax.text(0.5, 1.10, sp_mic, **common)
 
-        # 100 µm scale bar at the bottom-right of the thumbnail.
         sb_mm_len = scale_bar_mm(uid, thumb_mm)
         if sb_mm_len is not None:
             draw_scale_bar(ax, sb_mm_len, thumb_mm)
@@ -494,7 +439,6 @@ def main():
     plt.close(fig)
     print(f"→ {OUT_PATH.relative_to(HERE.parent.parent)}  "
           f"(saved at {DPI} dpi)")
-
 
 if __name__ == "__main__":
     main()

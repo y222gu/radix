@@ -1,10 +1,5 @@
 #!/bin/bash
-# YOLO26m-seg, Strategy A — instance-segmentation baseline (Fig 2f, "YOLO26m-seg").
-# Fine-tuned from a COCO-pretrained checkpoint to detect the six annotated raw classes
-# (outer epidermis contour, aerenchyma, outer/inner endodermis, outer/inner exodermis).
-# At inference the polygons are rasterized and combined into 7-class semantic masks for
-# comparison with the other models. overlap_mask=False is required (see CLAUDE.md).
-# Output: output/runs/yolo/yolo26m-seg_semantic7c_A/
+
 #SBATCH --job-name=yolo26m_seg
 #SBATCH --partition=gpu-qi
 #SBATCH --gres=gpu:a100_80:1

@@ -1,7 +1,7 @@
 """Supplementary figure: each training augmentation applied individually
 to one sample, arranged in a 3x4 grid.
 
-Channel composite follows paper convention: DAPI=cyan, FITC=yellow, TRITC=red,
+Channel composite: DAPI=cyan, FITC=yellow, TRITC=red,
 additively blended (same recipe as fig1c). Channel-order arithmetic is done
 in the training (TRITC, FITC, DAPI) layout so ChannelDropout/ChannelShuffle
 visually drop/permute fluorescence channels rather than display channels.
@@ -33,12 +33,10 @@ from make_supp_training_gallery import (
 import re
 import matplotlib.patheffects as path_effects
 
-
 SAMPLE_UID = "Sorghum_C10_Exp5_F10"
 IMG_SIZE = 1024
 SEED = 7
 OUT_PATH = HERE / "supp_augmentations_600dpi.png"
-
 
 def make_composite(img_tfd: np.ndarray) -> np.ndarray:
     """Convert a (H, W, 3) image in (TRITC, FITC, DAPI) channel order to the
@@ -53,12 +51,10 @@ def make_composite(img_tfd: np.ndarray) -> np.ndarray:
     comp[..., 0] += tritc
     return np.clip(comp, 0, 1)
 
-
 def aug_pipeline(transform: A.BasicTransform, size: int) -> A.Compose:
     """Wrap one transform with a final resize so every panel has the same
     pixel dimensions as a training crop."""
     return A.Compose([transform, A.Resize(size, size)])
-
 
 def main():
     uid_to_sample = _uid_to_record()
@@ -66,13 +62,9 @@ def main():
         raise SystemExit(f"Sample {SAMPLE_UID} not in supplementary/data/")
     img = load_sample_normalized(uid_to_sample[SAMPLE_UID]).astype(np.float32)
 
-    # Original (just resized) for reference panel
     base_resize = A.Compose([A.Resize(IMG_SIZE, IMG_SIZE)])
     original = base_resize(image=img)["image"]
 
-    # Each entry: (display title, parameter string shown on panel, transform).
-    # Parameters are pinned to specific values so the label matches exactly
-    # what was applied - no ranges, no random sampling within the transform.
     def _drop_channel(idx):
         def _fn(image, **kw):
             out = image.copy()
@@ -127,7 +119,7 @@ def main():
             out = original
         else:
             pipe = aug_pipeline(t, IMG_SIZE)
-            pipe.set_random_seed(SEED + i)  # deterministic per-panel sample
+            pipe.set_random_seed(SEED + i)
             out = pipe(image=img)["image"]
         renders.append((title, params, make_composite(out)))
 
@@ -146,7 +138,6 @@ def main():
         facecolor="black",
         gridspec_kw={"wspace": 0.04, "hspace": 0.32},
     )
-    # Suptitle removed per user request - caption lives in the manuscript.
     fig.subplots_adjust(left=0.01, right=0.99, top=0.97, bottom=0.01)
 
     for idx in range(nrows * ncols):
@@ -156,7 +147,7 @@ def main():
         if idx < len(renders):
             title, params, comp = renders[idx]
             ax.imshow(comp)
-            # Title (bold) on first line, parameters (regular) below
+
             ax.text(0.5, 1.015, title,
                     transform=ax.transAxes, ha="center", va="bottom",
                     fontsize=8, fontweight=900, color="white",
@@ -165,16 +156,14 @@ def main():
                 ax.text(0.5, -0.02, params,
                         transform=ax.transAxes, ha="center", va="top",
                         fontsize=7, color="white")
-            # 100 µm scale bar drawn on the Original tile only - every
-            # augmentation panel reshapes or rescales the image, so the
-            # bar would mislead there.
+
             if idx == 0:
                 sb_mm = scale_bar_mm(SAMPLE_UID, cell_in * 25.4)
                 if sb_mm is not None:
                     draw_scale_bar(ax, sb_mm, cell_in * 25.4,
                                    label_fontsize=7,
                                    label_fontweight="normal")
-                # Species + genotype overlay at the top of the Original tile.
+
                 sp_gt = load_species_genotype_map()
                 sp_raw, g_raw = sp_gt.get(_norm_uid(SAMPLE_UID), ("", ""))
                 sp_disp = format_species(sp_raw) \
@@ -191,9 +180,7 @@ def main():
                             fontsize=7, color="white",
                             family="Helvetica", path_effects=stroke)
                 if sp_disp and gt_disp:
-                    # Combine into one centered string so the visual midpoint
-                    # of the whole label sits at x=0.5. Italic-only genotypes
-                    # use mathtext so italic styling is preserved.
+
                     if gt_italic:
                         combined = f"{sp_disp}, $\\mathit{{{gt_disp}}}$"
                     else:
@@ -213,7 +200,6 @@ def main():
     fig.savefig(OUT_PATH, dpi=600, facecolor="black", bbox_inches="tight")
     plt.close(fig)
     print(f"Saved to {OUT_PATH}")
-
 
 if __name__ == "__main__":
     main()

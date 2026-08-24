@@ -17,7 +17,6 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-
 MEASUREMENT_COLS = [
     "aerenchyma_ratio",
     "exodermis_TRITC", "exodermis_FITC",
@@ -42,7 +41,6 @@ SPECIES_COLORS = {
     "Tomato": "#CC79A7",
 }
 
-
 def plot_correlation(gt_vals, pred_vals, species_list, metric_name, out_path, ax=None):
     """Plot scatter with linear regression, R², identity line.
 
@@ -57,7 +55,6 @@ def plot_correlation(gt_vals, pred_vals, species_list, metric_name, out_path, ax
     if ax is None:
         fig, ax = plt.subplots(figsize=(5, 5))
 
-    # Filter valid pairs (both non-zero for intensity, or both valid for ratio)
     valid = np.isfinite(gt_vals) & np.isfinite(pred_vals)
     gt_v = gt_vals[valid]
     pred_v = pred_vals[valid]
@@ -71,14 +68,12 @@ def plot_correlation(gt_vals, pred_vals, species_list, metric_name, out_path, ax
             plt.close(fig)
         return {"R2": float("nan"), "slope": float("nan"), "intercept": float("nan"), "n": len(gt_v)}
 
-    # Scatter colored by species
     for sp in sorted(set(sp_v)):
         mask = sp_v == sp
         color = SPECIES_COLORS.get(sp, "#999999")
         ax.scatter(gt_v[mask], pred_v[mask], c=color, label=sp,
                    s=20, alpha=0.6, edgecolors="none")
 
-    # Linear regression (handle constant values)
     if np.std(gt_v) < 1e-10 or np.std(pred_v) < 1e-10:
         ax.text(0.5, 0.5, f"Constant values\nn={len(gt_v)}", transform=ax.transAxes,
                 ha="center", va="center", fontsize=10)
@@ -90,12 +85,10 @@ def plot_correlation(gt_vals, pred_vals, species_list, metric_name, out_path, ax
     slope, intercept, r_value, p_value, std_err = stats.linregress(gt_v, pred_v)
     r2 = r_value ** 2
 
-    # Regression line
     x_range = np.array([gt_v.min(), gt_v.max()])
     ax.plot(x_range, slope * x_range + intercept, "r-", linewidth=1.5,
             label=f"y={slope:.3f}x+{intercept:.3f}")
 
-    # Identity line
     all_vals = np.concatenate([gt_v, pred_v])
     lim_min = min(all_vals.min(), 0)
     lim_max = all_vals.max() * 1.05
@@ -119,7 +112,6 @@ def plot_correlation(gt_vals, pred_vals, species_list, metric_name, out_path, ax
     return {"R2": round(r2, 4), "slope": round(slope, 4),
             "intercept": round(intercept, 4), "n": len(gt_v)}
 
-
 def main():
     parser = argparse.ArgumentParser(description="Compare predicted vs GT downstream measurements")
     parser.add_argument("--gt", required=True, help="Path to gt_measurements.csv")
@@ -130,7 +122,6 @@ def main():
     gt_df = pd.read_csv(args.gt)
     pred_df = pd.read_csv(args.pred)
 
-    # Merge on sample_id
     merged = pd.merge(gt_df, pred_df, on="sample_id", suffixes=("_gt", "_pred"))
 
     if args.out_dir:
@@ -144,7 +135,6 @@ def main():
     print(f"Matched: {len(merged)}")
     print(f"Output: {out_dir}")
 
-    # Publication style
     plt.rcParams.update({
         "font.family": "sans-serif",
         "font.size": 8,
@@ -156,10 +146,8 @@ def main():
         "axes.spines.right": False,
     })
 
-    # Species column (from GT side)
     species = merged["species_gt"].values if "species_gt" in merged.columns else merged.get("species", pd.Series(["unknown"] * len(merged))).values
 
-    # Individual plots + summary (overall)
     summary_rows = []
 
     print("\n=== Overall ===")
@@ -174,7 +162,6 @@ def main():
         gt_vals = merged[gt_col].values.astype(float)
         pred_vals = merged[pred_col].values.astype(float)
 
-        # Compute stats only (combined plot generated below)
         valid = np.isfinite(gt_vals) & np.isfinite(pred_vals)
         gt_v, pred_v = gt_vals[valid], pred_vals[valid]
         if len(gt_v) >= 3 and np.std(gt_v) > 1e-10 and np.std(pred_v) > 1e-10:
@@ -191,7 +178,6 @@ def main():
         sl_str = f"{result['slope']:.4f}" if not np.isnan(result['slope']) else "   nan"
         print(f"  {metric:25s}  R²={r2_str}  slope={sl_str}  n={result['n']}")
 
-    # Per-species breakdown
     unique_species = sorted(set(species))
     for sp in unique_species:
         sp_mask = species == sp
@@ -210,7 +196,6 @@ def main():
             pred_vals = sp_merged[pred_col].values.astype(float)
             sp_species = np.array([sp] * len(gt_vals))
 
-            # Compute stats only (no individual plot)
             valid = np.isfinite(gt_vals) & np.isfinite(pred_vals)
             gt_v, pred_v = gt_vals[valid], pred_vals[valid]
             if len(gt_v) >= 3 and np.std(gt_v) > 1e-10 and np.std(pred_v) > 1e-10:
@@ -227,7 +212,6 @@ def main():
             sl_str = f"{result['slope']:.4f}" if not np.isnan(result['slope']) else "   nan"
             print(f"  {metric:25s}  R²={r2_str}  slope={sl_str}  n={result['n']}")
 
-    # Combined figure — overall (2 rows x 4 cols, last cell empty)
     fig, axes = plt.subplots(2, 4, figsize=(16, 8))
     axes_flat = axes.flatten()
 
@@ -247,7 +231,6 @@ def main():
     plt.close(fig)
     print(f"\nCombined plot saved to {combined_path}")
 
-    # Combined figure — per species
     for sp in unique_species:
         sp_mask = species == sp
         sp_merged = merged[sp_mask]
@@ -274,7 +257,6 @@ def main():
         plt.close(fig)
         print(f"  {sp} combined plot saved to {sp_path}")
 
-    # Summary CSV (includes per-species rows)
     summary_csv = out_dir / "correlation_summary.csv"
     with open(summary_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["species", "metric", "R2", "slope", "intercept", "n"])
@@ -282,12 +264,10 @@ def main():
         writer.writerows(summary_rows)
     print(f"\nSummary saved to {summary_csv}")
 
-    # Print summary table
     print(f"\n{'Species':10s}  {'Metric':25s}  {'R²':>8s}  {'Slope':>8s}  {'n':>5s}")
     print("-" * 65)
     for row in summary_rows:
         print(f"{row['species']:10s}  {row['metric']:25s}  {row['R2']:8.4f}  {row['slope']:8.4f}  {row['n']:5d}")
-
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,4 @@
-# Figure 3a
+
 
 import argparse
 import json
@@ -23,7 +23,6 @@ from src.annotation_utils import (
 from src.model_classes import unet_semantic_to_bio7, BIO_7_NAMES
 from eval_bio7 import iou_dice
 from train.train_timm_semantic import TimmSemanticModule
-
 
 DEFAULT_OUT = HERE / "fig3a_assets"
 DATA_DIR = REPO / "data"
@@ -56,11 +55,9 @@ BIO7_PALETTE_HEX = {
 PAINT_ORDER = ["Whole Root", "Epidermis", "Exodermis", "Cortex",
                "Endodermis", "Vascular", "Aerenchyma"]
 
-
 def hex_to_rgb01(h):
     h = h.lstrip("#")
     return (int(h[0:2], 16) / 255, int(h[2:4], 16) / 255, int(h[4:6], 16) / 255)
-
 
 def pick_device(arg):
     if arg != "auto":
@@ -71,11 +68,9 @@ def pick_device(arg):
         return torch.device("mps")
     return torch.device("cpu")
 
-
 def save_png(arr01, path):
     arr = (np.clip(arr01, 0, 1) * 255).round().astype(np.uint8)
     Image.fromarray(arr).save(path)
-
 
 def composite_paper(img_norm):
     tritc, fitc, dapi = img_norm[..., 0], img_norm[..., 1], img_norm[..., 2]
@@ -87,13 +82,11 @@ def composite_paper(img_norm):
     comp[..., 0] += tritc
     return np.clip(comp, 0, 1)
 
-
 def parse_uid(stem):
     parts = stem.split("_")
     species, scope, exp = parts[:3]
     sample = "_".join(parts[3:])
     return species, scope, exp, sample
-
 
 def find_sample(species, scope, exp, sample):
     for split in ("train", "val", "test", "oneshot"):
@@ -106,7 +99,6 @@ def find_sample(species, scope, exp, sample):
             )
     raise FileNotFoundError(f"{species}/{scope}/{exp}/{sample} not in data/")
 
-
 def render_bio7(sem_mask_7):
     h, w = sem_mask_7.shape
     bio = unet_semantic_to_bio7(sem_mask_7, h, w)
@@ -117,7 +109,6 @@ def render_bio7(sem_mask_7):
         out[m] = rgb
     return out
 
-
 def square_stretch_pipeline(img, val_transform):
     img_r = cv2.resize(img, (TRAIN_IMG_SIZE, TRAIN_IMG_SIZE),
                        interpolation=cv2.INTER_LINEAR)
@@ -126,12 +117,10 @@ def square_stretch_pipeline(img, val_transform):
                               mask=np.zeros(img_r.shape[:2], dtype=np.int32))["image"]
     return img_r
 
-
 def predict_argmax(module, img_tensor):
     with torch.inference_mode():
         logits = module(img_tensor).float()
     return logits.argmax(dim=1)[0].cpu().numpy().astype(np.int32)
-
 
 def load_gt_7class(rec):
     if not rec.annotation_path.exists():
@@ -143,7 +132,6 @@ def load_gt_7class(rec):
     return cv2.resize(sem_full.astype(np.uint8),
                       (TRAIN_IMG_SIZE, TRAIN_IMG_SIZE),
                       interpolation=cv2.INTER_NEAREST).astype(np.int32)
-
 
 def main():
     p = argparse.ArgumentParser()
@@ -208,7 +196,6 @@ def main():
             torch.cuda.empty_cache()
 
     print(f"All assets saved → {args.out}")
-
 
 if __name__ == "__main__":
     main()

@@ -12,7 +12,7 @@ from PIL import Image
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from scripts.render_science_art_pred_pca import (                       # noqa: E402
+from scripts.render_science_art_pred_pca import (
     OUT_ROOT, collect_uids, ART_DIR,
 )
 
@@ -20,9 +20,7 @@ CELL = 800
 GAP = 8
 BG = (0, 0, 0)
 
-# Pick grid by sample count: 10→2×5, 12→3×4 (3 rows × 4 cols)
 GRIDS = {10: (2, 5), 12: (3, 4)}
-
 
 def main():
     uids = collect_uids()
@@ -50,7 +48,6 @@ def main():
 
     canvas.save(out_path)
     print(f"\nWrote {out_path} ({W}x{H})")
-
 
 if __name__ == "__main__":
     main()

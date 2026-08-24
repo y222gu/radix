@@ -6,7 +6,6 @@ from typing import Dict, List, Optional
 
 from .config import TRAIN_DIR, SampleRecord
 
-
 class SampleRegistry:
     """Central registry of all annotated samples.
 
@@ -47,14 +46,14 @@ class SampleRegistry:
             annotation_files = {f.name for f in annotation_dir.iterdir() if f.is_file()}
 
         for root, dirs, files in os.walk(image_dir):
-            if not dirs and files:  # leaf directory
+            if not dirs and files:
                 tif_files = [f for f in files if f.lower().endswith((".tif", ".tiff"))]
                 if not tif_files:
                     continue
 
                 full_path = Path(root)
                 rel_path = full_path.relative_to(image_dir)
-                parts = rel_path.parts  # (Species, Microscope, Experiment, SampleName)
+                parts = rel_path.parts
 
                 if len(parts) != 4:
                     continue
@@ -76,7 +75,6 @@ class SampleRegistry:
                     annotation_path=annotation_dir / annotation_name if has_annotation else None,
                 ))
 
-        # Sort for deterministic ordering
         self.samples.sort(key=lambda s: s.uid)
 
     def filter(
@@ -120,19 +118,19 @@ class SampleRegistry:
     def summary(self) -> str:
         """Print dataset summary statistics."""
         lines = [f"Total samples: {len(self.samples)}"]
-        # Per species
+
         species_counts: Dict[str, int] = {}
         for s in self.samples:
             species_counts[s.species] = species_counts.get(s.species, 0) + 1
         for sp, cnt in sorted(species_counts.items()):
             lines.append(f"  {sp}: {cnt}")
-        # Per microscope
+
         micro_counts: Dict[str, int] = {}
         for s in self.samples:
             micro_counts[s.microscope] = micro_counts.get(s.microscope, 0) + 1
         for m, cnt in sorted(micro_counts.items()):
             lines.append(f"  {m}: {cnt}")
-        # Experiments
+
         exp_groups = self.get_experiment_groups()
         lines.append(f"Total experiments: {len(exp_groups)}")
         return "\n".join(lines)

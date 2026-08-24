@@ -11,7 +11,6 @@ import tifffile
 
 from .config import CHANNELS, OUTPUT_DIR, SampleRecord
 
-
 @dataclass
 class PadMeta:
     """Metadata for reversing resize + padding."""
@@ -24,15 +23,13 @@ class PadMeta:
     pad_right: int
     target_size: int
 
-
 def load_channel(path: Path) -> np.ndarray:
     """Load a single TIF channel, return as 2D float32 array."""
     img = tifffile.imread(str(path))
-    # Handle multi-dimensional (take first slice)
+
     if img.ndim > 2:
         img = img[0] if img.shape[0] < img.shape[-1] else img[..., 0]
     return img.astype(np.float32)
-
 
 def load_sample_raw(sample: SampleRecord) -> np.ndarray:
     """Load 3-channel image as (H, W, 3) float32 without normalization.
@@ -41,11 +38,10 @@ def load_sample_raw(sample: SampleRecord) -> np.ndarray:
     Values remain in original range (uint16 or float32).
     """
     channels = []
-    for ch_name in ["TRITC", "FITC", "DAPI"]:  # RGB order
+    for ch_name in ["TRITC", "FITC", "DAPI"]:
         ch = load_channel(sample.channel_path(ch_name))
         channels.append(ch)
     return np.stack(channels, axis=-1)
-
 
 def normalize_percentile(
     img: np.ndarray,
@@ -73,12 +69,10 @@ def normalize_percentile(
             out[..., c] = 0.0
     return out
 
-
 def load_sample_normalized(sample: SampleRecord) -> np.ndarray:
     """Load sample and normalize to [0, 1] float32, shape (H, W, 3)."""
     raw = load_sample_raw(sample)
     return normalize_percentile(raw)
-
 
 def resize_with_padding(
     img: np.ndarray,
@@ -130,7 +124,6 @@ def resize_with_padding(
 
     return padded_img, resized_masks, meta
 
-
 def unpad_predictions(
     pred: np.ndarray,
     meta: PadMeta,
@@ -161,11 +154,9 @@ def unpad_predictions(
             result.append(r)
         return np.stack(result)
 
-
 def to_uint8(img: np.ndarray) -> np.ndarray:
     """Convert [0, 1] float32 image to uint8."""
     return (np.clip(img, 0, 1) * 255).astype(np.uint8)
-
 
 def compute_dataset_stats(
     samples: List[SampleRecord],

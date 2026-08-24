@@ -1,7 +1,5 @@
 #!/bin/bash
-# RADIX ablation: drop ChannelShuffle augmentation (Supp Table 8 row).
-# ChannelDropout remains at p=0.2; ChannelShuffle is turned off (p=0).
-# Output: output/runs/timm/dpt_meta_facebook_dinov3-vits16-pretrain-lvd1689m_equalw_drop_dfcel_semantic7c_A/
+
 #SBATCH --job-name=radix_no_shuf
 #SBATCH --partition=gpu-qi
 #SBATCH --gres=gpu:a100_80:1

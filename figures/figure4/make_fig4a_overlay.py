@@ -1,4 +1,4 @@
-# Figure 4a
+
 
 import json
 import sys
@@ -20,42 +20,29 @@ UID = "Sorghum_Olympus_Exp88_N3_02"
 OUT_DIR = HERE / "4a"
 
 OVERLAY_ALPHA = 0.85
-AER_OVERLAY_ALPHA = 0.95   # aer mask is opaque-ish over the dim DAPI base
-# Rotate the main full-image PNG by 90° counter-clockwise (k=1). Crop assets keep
-# their original orientation; only the box coordinates on the full image are
-# remapped into rotated coords so the boxes still mark the correct region.
+AER_OVERLAY_ALPHA = 0.95
+
 ROTATE_MAIN_K_CCW = 0
 
 CROP_SIZE = 128
-# Target fraction of crop occupied by the class - picks a crop where the ring
-# crosses near the middle (rather than fully inside or fully outside).
+
 CROP_TARGET_FRAC = 0.40
 
-# Aerenchyma rectangular crop (4:1 aspect) - picks the densest window
 AER_CROP_W = 512
 AER_CROP_H = 128
 
-# Per-(class, channel) intensity keep-ranges (raw uint16 scale).
-# Pixels in [low, high] are kept; None means open-ended on that side.
-# Source: user's analysis CLI flags
-#   --threshold Endodermis:FITC=14000-max
-#   --threshold Exodermis:TRITC=7000-max
 INTENSITY_THRESHOLDS = {
     "Endodermis": {"FITC":  (14000, None)},
     "Exodermis":  {"TRITC": (7000,  None)},
 }
 CHANNEL_IDX = {"TRITC": 0, "FITC": 1, "DAPI": 2}
 
-# Endo and exo crop quadrants (relative to the ring centroid).
-CROP_QUADRANT = {"endo": "BR", "exo": None}  # exo: free search
+CROP_QUADRANT = {"endo": "BR", "exo": None}
 
-# Manual crop overrides as (y, x) top-left in the un-rotated image. When set,
-# they bypass the auto-search for that tag. Pick coords with fig4a_pick_crop.html
-# and paste them here. Set to None to use the auto search again.
 CROP_OVERRIDES: dict[str, tuple[int, int] | None] = {
     "endo": None,
     "exo":  None,
-    "aer":  None,   # (y, x) top-left for the AER_CROP_W × AER_CROP_H rectangle
+    "aer":  None,
 }
 
 COLOR_MAP = {
@@ -64,15 +51,13 @@ COLOR_MAP = {
     "Cortex":     "#94d2bd",
     "Endodermis": "#f6e48e",
     "Vascular":   "#e76f61",
-    "Aerenchyma": "#355c6b",   # subtle lift from #264653
+    "Aerenchyma": "#355c6b",
 }
 PAINT_ORDER = ["Epidermis", "Exodermis", "Cortex", "Endodermis", "Vascular", "Aerenchyma"]
-
 
 def hex_to_rgb(h: str) -> tuple[int, int, int]:
     h = h.lstrip("#")
     return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-
 
 def render_composite(sample) -> np.ndarray:
     img = load_sample_normalized(sample)
@@ -84,7 +69,6 @@ def render_composite(sample) -> np.ndarray:
     comp[..., 0] += tritc
     return (np.clip(comp, 0, 1) * 255).astype(np.uint8)
 
-
 def render_single_channel(sample, channel: str) -> np.ndarray:
     """Single-channel render as grayscale (intensity replicated to all 3 RGB channels).
     channel ∈ {'FITC','TRITC','DAPI'}."""
@@ -95,7 +79,6 @@ def render_single_channel(sample, channel: str) -> np.ndarray:
         raise ValueError(channel)
     out = np.repeat(arr[..., None], 3, axis=2)
     return (np.clip(out, 0, 1) * 255).astype(np.uint8)
-
 
 def render_bio7_mask(bio7: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
     """Return (rgb, painted_mask). painted_mask=True where any class is painted."""
@@ -109,7 +92,6 @@ def render_bio7_mask(bio7: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarra
         rgb[m] = hex_to_rgb(COLOR_MAP[cls])
         painted |= m
     return rgb, painted
-
 
 def find_crop_box(mask: np.ndarray, size: int, target_frac: float,
                   roi: tuple[int, int, int, int] | None = None) -> tuple[int, int]:
@@ -135,11 +117,9 @@ def find_crop_box(mask: np.ndarray, size: int, target_frac: float,
     y, x = np.unravel_index(flat, A.shape)
     return int(y), int(x)
 
-
 def rotate_image_ccw(arr: np.ndarray, k: int) -> np.ndarray:
     """Rotate 90°×k counter-clockwise. k=0 is identity."""
     return np.rot90(arr, k=k) if k else arr
-
 
 def remap_box_ccw(x: int, y: int, w: int, h: int,
                   img_w: int, img_h: int, k: int) -> tuple[int, int, int, int, int, int]:
@@ -147,11 +127,10 @@ def remap_box_ccw(x: int, y: int, w: int, h: int,
     img_w×img_h image. Returns (new_x, new_y, new_w, new_h, new_img_w, new_img_h)."""
     k %= 4
     for _ in range(k):
-        # 90° CCW: new_x = y, new_y = (img_w - x - w), new_w = h, new_h = w
+
         x, y, w, h = y, img_w - x - w, h, w
         img_w, img_h = img_h, img_w
     return x, y, w, h, img_w, img_h
-
 
 def find_intensity_match_box(
     primary_mask: np.ndarray,
@@ -196,7 +175,6 @@ def find_intensity_match_box(
     y, x = np.unravel_index(flat, diff.shape)
     return int(y), int(x)
 
-
 def find_densest_rect(mask: np.ndarray, h_size: int, w_size: int) -> tuple[int, int]:
     """Return top-left (y, x) of the (h_size × w_size) window with the maximum
     True-pixel count in `mask`. Uses an integral image for O(1) per-window sums."""
@@ -210,7 +188,6 @@ def find_densest_rect(mask: np.ndarray, h_size: int, w_size: int) -> tuple[int, 
     flat = int(np.argmax(A))
     y, x = np.unravel_index(flat, A.shape)
     return int(y), int(x)
-
 
 def quadrant_roi(mask: np.ndarray, size: int, quadrant: str) -> tuple[int, int, int, int]:
     """ROI for the top-left of a (size×size) crop so its centre lands on a
@@ -237,17 +214,14 @@ def quadrant_roi(mask: np.ndarray, size: int, quadrant: str) -> tuple[int, int, 
         raise ValueError(quadrant)
     return y0, max(y0 + 1, y1), x0, max(x0 + 1, x1)
 
-
 def crop_array(arr: np.ndarray, y: int, x: int, size: int) -> np.ndarray:
     return arr[y:y + size, x:x + size]
-
 
 def load_polygons_to_bio7(txt_path: Path, h: int, w: int) -> dict[str, np.ndarray]:
     anns = parse_yolo_annotations(txt_path, w, h)
     raw = polygons_to_raw_binary_masks(anns, h, w)
     raw = {k: fill_contours(v) for k, v in raw.items()}
     return yolo_overlap_false_to_bio7(raw, h, w)
-
 
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -282,13 +256,10 @@ def main() -> None:
     overlay[painted] = (1 - a) * comp[painted] + a * pred_rgb[painted]
     overlay = np.clip(overlay, 0, 255).astype(np.uint8)
 
-    # Pre-render full-image grayscale single-channel views and per-class single-channel
-    # overlays where only the matching class is alpha-blended on top.
     fitc_full  = render_single_channel(sample, "FITC")
     tritc_full = render_single_channel(sample, "TRITC")
 
-    # Raw uint16 image used for intensity-based threshold filtering.
-    raw_image = load_sample_raw(sample)  # shape (h, w, 3); channel order = (TRITC, FITC, DAPI)
+    raw_image = load_sample_raw(sample)
 
     def threshold_mask(cls_mask: np.ndarray, channel: str, cls: str) -> np.ndarray:
         """Apply the per-(cls, channel) intensity keep-range to `cls_mask`."""
@@ -312,9 +283,6 @@ def main() -> None:
         out[mask] = (1 - a_use) * base[mask] + a_use * color
         return np.clip(out, 0, 255).astype(np.uint8)
 
-    # Full-image variants for the interactive crop-picker page AND for client-side
-    # cropping in fig4a_overlay.html. All saved un-rotated so coords from the
-    # picker (and from python's CROP_OVERRIDES) line up.
     endo_mask = pred_bio7.get("Endodermis", np.zeros((h, w), dtype=bool)).astype(bool)
     exo_mask  = pred_bio7.get("Exodermis",  np.zeros((h, w), dtype=bool)).astype(bool)
 
@@ -345,8 +313,7 @@ def main() -> None:
             y, x = ovr
             quad = "manual"
         elif tag == "exo":
-            # Pick a window where exodermis & epidermis have similar TRITC mean
-            # intensity - visualises the model separating two stains-alike rings.
+
             epi = pred_bio7.get("Epidermis")
             tritc_raw = raw_image[..., CHANNEL_IDX["TRITC"]]
             if epi is not None and epi.any():
@@ -384,9 +351,6 @@ def main() -> None:
                            "quadrant": quad}
         print(f"  crop_{tag} ({cls}): top-left=({x},{y})  frac={frac:.2f}  quad={quad}")
 
-    # Aerenchyma rectangular crop (2:1 aspect): max-density 256×128 window.
-    # Base channel = DAPI (cell walls) so the air-filled aer cavities show as
-    # low-signal voids that the model fills with the aer color.
     aer_mask = pred_bio7.get("Aerenchyma")
     if aer_mask is not None and aer_mask.any():
         dapi_full = render_single_channel(sample, "DAPI")
@@ -394,10 +358,9 @@ def main() -> None:
             dapi_full, aer_mask.astype(bool), "Aerenchyma",
             alpha=AER_OVERLAY_ALPHA,
         )
-        # Plain DAPI grayscale (used by the fig4a aer cell - no overlay paint).
+
         Image.fromarray(dapi_full).save(OUT_DIR / f"{UID}_full_aer_dapi.png")
-        # DAPI + aer overlay (used by fig4a_pick_crop.html stage). Filename kept
-        # as `_composite_overlay` for backwards compat with the picker HTML.
+
         Image.fromarray(aer_only_overlay).save(OUT_DIR / f"{UID}_full_aer_composite_overlay.png")
         aer_ovr = CROP_OVERRIDES.get("aer")
         if aer_ovr is not None:
@@ -419,8 +382,6 @@ def main() -> None:
     else:
         print("  [warn] no Aerenchyma predicted - skipping aer crop")
 
-    # Remap crop-box positions to the rotated full-image coordinate system so
-    # the boxes/connectors in the HTML line up with the rotated main image.
     crops_meta_rot = {}
     for tag, c in crops_meta.items():
         cw = c.get("w", c.get("size"))
@@ -431,14 +392,13 @@ def main() -> None:
         if "w" in c or "h" in c:
             new["w"], new["h"] = nw, nh
         else:
-            # Square crops keep "size", but after rotation w==h still, so leave it
-            new["size"] = nw  # nw == nh for squares
+
+            new["size"] = nw
         crops_meta_rot[tag] = new
 
     with open(OUT_DIR / f"{UID}_crops.json", "w") as f:
         json.dump({"image_size": [rw, rh], "crops": crops_meta_rot,
                    "rotation_k_ccw": ROTATE_MAIN_K_CCW}, f, indent=2)
-
 
 if __name__ == "__main__":
     main()

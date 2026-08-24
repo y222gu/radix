@@ -52,11 +52,10 @@ from src.splits import get_split, print_split_summary
 
 import segmentation_models_pytorch as smp
 
-NUM_CLASSES = 7  # bg + 6 anatomical regions
+NUM_CLASSES = 7
 CLASS_NAMES = ["bg", "epidermis", "aerenchyma", "endo_ring", "vascular", "exo_ring", "cortex"]
 
 PRETRAINED_MODEL_ID = "laid-back-lobster"
-
 
 def load_pretrained_weights(model, model_id):
     """Load pretrained PanSeg UNet weights with channel replication.
@@ -128,7 +127,6 @@ def load_pretrained_weights(model, model_id):
     print(f"  Loaded {loaded}, replicated {replicated}, "
           f"skipped {skipped_missing} missing + {skipped_shape} shape mismatch")
 
-
 class PlantSegSemanticModule(pl.LightningModule):
     """7-class semantic segmentation using PanSeg UNet2D architecture."""
 
@@ -150,7 +148,6 @@ class PlantSegSemanticModule(pl.LightningModule):
         self.scheduler_name = scheduler
         self.eta_min = eta_min
 
-        # PanSeg UNet2D: 3 input channels, 7 output channels (softmax), no final activation
         self.model = UNet2D(
             in_channels=3,
             out_channels=NUM_CLASSES,
@@ -169,7 +166,6 @@ class PlantSegSemanticModule(pl.LightningModule):
             print("Loading pretrained PanSeg weights...")
             load_pretrained_weights(self.model, PRETRAINED_MODEL_ID)
 
-        # Same loss as U-Net++ semantic: Dice + Focal + weighted CE + Lovász
         self.dice_loss = smp.losses.DiceLoss(mode="multiclass", classes=NUM_CLASSES)
         self.focal_loss = smp.losses.FocalLoss(mode="multiclass")
         self.lovasz_loss = smp.losses.LovaszLoss(mode="multiclass")
@@ -178,7 +174,7 @@ class PlantSegSemanticModule(pl.LightningModule):
         self.register_buffer("class_weights", torch.tensor(weights, dtype=torch.float32))
 
     def forward(self, x):
-        return self.model(x)  # raw logits (B, 7, H, W)
+        return self.model(x)
 
     def _shared_step(self, batch, stage):
         images = batch["image"]
@@ -227,7 +223,6 @@ class PlantSegSemanticModule(pl.LightningModule):
             scheduler = torch.optim.lr_scheduler.StepLR(
                 optimizer, step_size=max(self.trainer.max_epochs // 3, 1), gamma=0.1)
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
-
 
 class EpochLogger(Callback):
     """Print epoch summary + compute val IoU every N epochs."""
@@ -300,7 +295,6 @@ class EpochLogger(Callback):
                         writer.writeheader()
                         self.iou_csv_written = True
                     writer.writerow(row)
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -407,7 +401,6 @@ def main():
 
     trainer.fit(model, train_dl, val_dl)
 
-    # Plot loss curves
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -444,13 +437,11 @@ def main():
         fig.savefig(run_dir / "loss_curve.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
 
-    # Test
     print("\n" + "=" * 60)
     print("EVALUATING ON TEST SET")
     trainer.logger = False
     test_results = trainer.test(model, test_dl, ckpt_path="best")
     print(f"Test results: {test_results}")
-
 
 if __name__ == "__main__":
     main()

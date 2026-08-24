@@ -303,16 +303,13 @@
 <script src="d3.v7.min.js"></script>
 <script src="fig4_corr_common.js"></script>
 <script>
-// ── 4a image assets ─────────────────────────────────────────────────────
+
 const UID = "Sorghum_Olympus_Exp88_N3_02";
 const ASSETS = "4a/" + UID;
 const TS = Date.now();
-// Aerenchyma crop is scaled vertically by this factor (height only, centred).
+
 const AER_HEIGHT_SCALE = 1.5;
 
-// localStorage override key - populated by fig4a_pick_crop.html when the user
-// picks custom endo/exo/aer crops. Honour the same overrides here so this
-// assembler shows exactly what the picker selected.
 const STORAGE_KEY = "fig4a_crops:" + UID;
 function loadOverride() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); }
@@ -322,9 +319,7 @@ const STORED_OVERRIDE = loadOverride();
 const HAS_OVERRIDE = !!(STORED_OVERRIDE && STORED_OVERRIDE.endo && STORED_OVERRIDE.exo);
 
 document.getElementById("img-base").src = ASSETS + "_image.png?t=" + TS;
-// Only load the pre-rendered endo/exo crops when there's no localStorage
-// override (matches fig4a_overlay.html). With an override, recropAllCells()
-// below redraws them from the full-image sources.
+
 if (!HAS_OVERRIDE) {
   document.getElementById("img-exo-tritc").src           = ASSETS + "_crop_exo_tritc.png?t="              + TS;
   document.getElementById("img-endo-fitc").src           = ASSETS + "_crop_endo_fitc.png?t="              + TS;
@@ -333,13 +328,10 @@ if (!HAS_OVERRIDE) {
   document.getElementById("img-exo-tritc-ovl-thr").src   = ASSETS + "_crop_exo_tritc_overlay_thr.png?t="  + TS;
   document.getElementById("img-endo-fitc-ovl-thr").src   = ASSETS + "_crop_endo_fitc_overlay_thr.png?t="  + TS;
 }
-// Aer cells are ALWAYS re-cropped from the full image (because we apply the
-// 1.5× height scale). Load the pre-rendered crops first as a placeholder so
-// the cells aren't blank during the re-crop.
+
 document.getElementById("img-aer").src         = ASSETS + "_crop_aer_image.png?t="   + TS;
 document.getElementById("img-aer-overlay").src = ASSETS + "_crop_aer_overlay.png?t=" + TS;
 
-// ── On-the-fly cropping (from full-image sources) ───────────────────────
 const FULL_SOURCES = {
   "img-endo-fitc":          ASSETS + "_full_endo_fitc.png",
   "img-endo-fitc-ovl-pred": ASSETS + "_full_endo_fitc_overlay.png",
@@ -373,7 +365,6 @@ async function cropTo(imgId, fullUrl, x, y, w, h) {
   } catch (e) { console.warn("cropTo failed", imgId, e); }
 }
 
-// ── Rotation helpers (mirror fig4a_overlay.html) ────────────────────────
 function rotateUnRotatedToRotated(x, y, size, imgW, imgH, k) {
   k = ((k % 4) + 4) % 4;
   for (let i = 0; i < k; i++) {
@@ -410,7 +401,6 @@ function mutateCropsMetaFromOverride(stored) {
   }
 }
 
-// Scale only the aerenchyma crop's HEIGHT, keeping its vertical centre fixed.
 function scaleAerCrop(factor) {
   if (!CROPS_META || !CROPS_META.crops.aer) return;
   const a = CROPS_META.crops.aer;
@@ -438,7 +428,6 @@ async function recropAer() {
   await cropTo("img-aer-overlay", FULL_SOURCES["img-aer-overlay"], a.x, a.y, a.w, a.h);
 }
 
-// ── crop boxes (drawn on the main 4a panel) ─────────────────────────────
 let CROPS_META = null;
 const ZOOM_CONNECTOR = {
   exo:  { cell: "cell-exo-tritc", dir: "right" },
@@ -538,19 +527,15 @@ showBoxes.addEventListener("change", () => {
 
 async function applyOverridesAndRecrop() {
   if (!CROPS_META) return;
-  // 1) Apply user's localStorage override (if any) - restores fig4a_pick_crop
-  //    selections so the assembler matches what fig4a_overlay.html shows.
+
   if (STORED_OVERRIDE) {
     mutateCropsMetaFromOverride(STORED_OVERRIDE);
   }
-  // 2) Scale the aerenchyma crop's HEIGHT by 1.5× (centred), unless the JSON
-  //    already carries the baked aer-height marker (set by Save crop defaults).
+
   if (!CROPS_META.aer_height_baked) {
     scaleAerCrop(AER_HEIGHT_SCALE);
   }
-  // 3) Force aer crop to a 2:1 width:height ratio (recentred vertically), so
-  //    the white box on the main image and the zoomed cell are both 2:1
-  //    regardless of any stale localStorage override from the picker tool.
+
   if (CROPS_META.crops.aer && CROPS_META.crops.aer.w) {
     const a = CROPS_META.crops.aer;
     const targetH = Math.round(a.w / 2);
@@ -558,10 +543,7 @@ async function applyOverridesAndRecrop() {
     a.y = Math.round(a.y + currentH / 2 - targetH / 2);
     a.h = targetH;
   }
-  // 4) Always re-crop endo/exo from the full image based on the effective
-  //    CROPS_META positions, so the displayed crops match the white zoom-in
-  //    boxes - the pre-rendered _crop_*.png files may have stale positions
-  //    baked in.
+
   await recropEndoExo({
     endo: CROPS_META.crops.endo,
     exo:  CROPS_META.crops.exo,
@@ -570,10 +552,6 @@ async function applyOverridesAndRecrop() {
   placeCropBoxes();
 }
 
-// ── Save current crops as the new on-disk defaults ──────────────────────
-// Writes the effective CROPS_META (override-applied + aer scaled) to a JSON
-// file and clears the localStorage override so the next load picks up the
-// baked positions without re-scaling.
 function saveCropDefaults() {
   if (!CROPS_META) { alert("Crops not loaded yet - wait for the figure to render then retry."); return; }
   const out = {
@@ -613,15 +591,6 @@ document.getElementById("save-defaults").addEventListener("click", saveCropDefau
   await injectFig4ScaleBars();
 })();
 
-// ────────────────────────────────────────────────────────────────────────
-// 100 µm / 10 µm scale-bar injection for cell-main (panel a) and the
-// three channel cells in panels b / c / d. bar-frac is hard-coded from
-// the calibration (Olympus 308 px/100 µm = 3.08 px/µm) and the source-
-// pixel widths each cell shows:
-//   cell-main         : full 2048-px image  → 100 µm bar = 308/2048
-//   cell-exo-tritc / cell-endo-fitc : 128-px crop → 10 µm bar = 30.8/128
-//   cell-aer           : 512-px crop  → 10 µm bar = 30.8/512 (horizontal)
-// ────────────────────────────────────────────────────────────────────────
 const FIG4_SB_MAIN     = { rightMm: 1.2, bottomMm: 1.2, barHmm: 0.40, labelGapMm: 1.0, fontPt: 7 };
 const FIG4_SB_CHANNEL  = { rightMm: 0.7, bottomMm: 0.7, barHmm: 0.25, labelGapMm: 0.7, fontPt: 6 };
 const FIG4_SB_SPECS = [
@@ -665,27 +634,17 @@ async function injectFig4ScaleBars() {
   }
 }
 
-// Live-update if the picker writes a new override while this tab is open.
 window.addEventListener("storage", e => {
   if (e.key === STORAGE_KEY) location.reload();
 });
 
-// ── 4e: 2×3 grid of 5 same-sized regression panels + species legend ─────
-//   row 0:  Endo TRITC | Endo FITC  | Aerenchyma Ratio
-//   row 1:  Exo TRITC  | Exo FITC   | Legend
-// Bottom-right sub-cell hosts the species legend.
 const E_SVG = d3.select("#fig4e-svg").attr("font-family", "Helvetica, Arial, sans-serif");
 
 const E_VB_W = 106.8, E_VB_H = 73.2;
 const E_COLS = 3, E_ROWS = 2;
-const SUB_W = E_VB_W / E_COLS;   // 35.6
-const SUB_H = E_VB_H / E_ROWS;   // 27.575
+const SUB_W = E_VB_W / E_COLS;
+const SUB_H = E_VB_H / E_ROWS;
 
-// Margins reserve room for axis titles: bottom ≥ 6.6 (tick labels + x-title)
-// and left ≥ 8 (tick labels + rotated y-title). left + right are balanced so
-// the "plot + y-label" assembly is centred on the sub-panel (which aligns
-// each plot column with the image column above it in panel b/c). Plot area
-// stays square: 35.6 - 9.5 - 3.5 = 22.6 wide, 36.6 - 6 - 8 = 22.6 tall.
 const SUB_MARGINS = { top: 6, right: 3.5, bottom: 8, left: 9.5 };
 
 const PLOT_CONFIGS = [
@@ -703,8 +662,7 @@ d3.csv("GT%26PRED.csv?t=" + TS).then(raw => {
   let nAer = 0;
   PLOT_CONFIGS.forEach(cfg => {
     const scale = cfg.scale || 1;
-    // parseFloat (not unary +) so empty CSV cells become NaN - otherwise
-    // Solanum's blank aerenchyma cells would parse to 0 and pollute the fit.
+
     const pts = raw.map(r => ({
       species: r.species,
       x: parseFloat(r[`GT_${cfg.field}`])   * scale,
@@ -722,25 +680,20 @@ d3.csv("GT%26PRED.csv?t=" + TS).then(raw => {
       margins: SUB_MARGINS,
     });
 
-    // Sub-panel letter (10 pt bold black, top-left of the sub-cell - no box).
     if (cfg.letter) {
       E_SVG.append("text")
         .attr("x", cfg.col * SUB_W + 0.6)
         .attr("y", cfg.row * SUB_H + 3.5)
-        .attr("font-size", 3.53)              // 10 pt
+        .attr("font-size", 3.53)
         .attr("font-weight", "bold")
         .attr("fill", "#000")
         .text(cfg.letter);
     }
   });
 
-  // Legend - bottom-right sub-cell. Single column (species markers first,
-  // then Linear fit / y = x), stacked vertically. The group is rendered at
-  // x = 0 then translated horizontally so its measured bounding box centres
-  // on the sub-cell's centre.
   const lx0 = LEGEND_CELL.col * SUB_W;
   const ly0 = LEGEND_CELL.row * SUB_H;
-  const fontSize = 2.47;   // 7 pt
+  const fontSize = 2.47;
   const markerSize = 5.0;
   const swatchHalfW = 2.0;
   const rowH = 4.0;
@@ -779,8 +732,7 @@ d3.csv("GT%26PRED.csv?t=" + TS).then(raw => {
       .attr("font-size", fontSize)
       .text(item.label);
   });
-  // Centre the legend horizontally on the sub-cell. getBBox() returns the
-  // tight bounding box of all children in user-space coords.
+
   const bbox = legendG.node().getBBox();
   const targetCx = lx0 + SUB_W / 2;
   const currentCx = bbox.x + bbox.width / 2;
@@ -793,7 +745,6 @@ d3.csv("GT%26PRED.csv?t=" + TS).then(raw => {
   document.getElementById("info").textContent = "Failed to load CSV: " + err.message;
 });
 
-// ── Save PNG / SVG ──────────────────────────────────────────────────────
 async function waitImgs() {
   const imgs = document.querySelectorAll("#fig img.layer");
   await Promise.all(Array.from(imgs).map(img =>
@@ -825,11 +776,6 @@ async function rasterizeSvg(svgEl, pxW, pxH) {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// Per-microscope image-adjustment helpers - same math as the on-screen
-// SVG filter (img-adjust-olympus / img-adjust-c10) so the rasterised PNG
-// and SVG exports match the live preview.
-// ════════════════════════════════════════════════════════════════════════
 const ADJUST_PARAMS = {
   olympus: { gamma: 0.95, contrast: 84, brightness: 39, saturation: 1.2, sharpness: 0 },
   c10:     { gamma: 0.90, contrast: 15, brightness: 0,  saturation: 1.1, sharpness: 0.4 },
@@ -915,7 +861,6 @@ async function savePNG() {
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "white"; ctx.fillRect(0, 0, W, H);
 
-  // Image-backed cells (everything except svg-cells)
   for (const cell of figEl.querySelectorAll(".cell:not(.svg-cell)")) {
     const r = cell.getBoundingClientRect();
     const x = Math.round((r.left - figRect.left) / cssPxPerMm * pxPerMm);
@@ -931,9 +876,7 @@ async function savePNG() {
       const sx = (sw - sCropW) / 2, sy = (sh - sCropH) / 2;
       const params = adjustParamsForSrc(img.src);
       if (params) {
-        // Render into an off-screen canvas at the cell's output size,
-        // apply the same pixel-level boost the on-screen CSS filter does,
-        // then composite onto the master canvas.
+
         const off = document.createElement("canvas");
         off.width  = Math.max(1, w);
         off.height = Math.max(1, h);
@@ -944,25 +887,20 @@ async function savePNG() {
         ctx.drawImage(img, sx, sy, sCropW, sCropH, x, y, w, h);
       }
     }
-    // Grey border around crop-cells (panels b/c/d image tiles) only.
-    // Per-side rects so adjacent cells share a single 0.25 mm divider
-    // instead of two stacking into a 0.5 mm strip. Mirrors the CSS rules
-    // that drop the left border on cells whose left neighbour is also a
-    // crop-cell, and the bottom border on cell-aer.
+
     if (cell.classList.contains("crop-cell")) {
       const bw = Math.max(1, Math.round(cropBorderMm * pxPerMm));
       const skipLeft = ["cell-exo-tritc-ovl", "cell-exo-tritc-ovl-thr",
                         "cell-endo-fitc-ovl", "cell-endo-fitc-ovl-thr"].includes(cell.id);
       const skipBottom = cell.id === "cell-aer";
       ctx.fillStyle = "#888";
-      ctx.fillRect(x, y, w, bw);                       // top
-      if (!skipBottom) ctx.fillRect(x, y + h - bw, w, bw);  // bottom
-      if (!skipLeft)   ctx.fillRect(x, y, bw, h);            // left
-      ctx.fillRect(x + w - bw, y, bw, h);              // right
+      ctx.fillRect(x, y, w, bw);
+      if (!skipBottom) ctx.fillRect(x, y + h - bw, w, bw);
+      if (!skipLeft)   ctx.fillRect(x, y, bw, h);
+      ctx.fillRect(x + w - bw, y, bw, h);
     }
   }
 
-  // SVG-backed cells (4e and 4f) - rasterize each <svg> at the target DPI
   for (const cell of figEl.querySelectorAll(".svg-cell")) {
     const r = cell.getBoundingClientRect();
     const x = Math.round((r.left - figRect.left) / cssPxPerMm * pxPerMm);
@@ -977,7 +915,6 @@ async function savePNG() {
     }
   }
 
-  // Crop boxes + dashed connectors on the main 4a panel
   if (showBoxes.checked && CROPS_META) {
     const main = document.getElementById("cell-main").getBoundingClientRect();
     const mainXmm = (main.left - figRect.left) / cssPxPerMm;
@@ -997,8 +934,7 @@ async function savePNG() {
       const yMm = mainYmm + (c.y / imgH) * mainHmm;
       const wMm = (cw / imgW) * mainWmm;
       const hMm = (ch / imgH) * mainHmm;
-      // Inset by half-stroke so the visible outline stays INSIDE the box
-      // bounds (matches CSS border-box; keeps the label clear of the stroke).
+
       ctx.strokeRect(Math.round(xMm * pxPerMm) + boxLwPx / 2,
                      Math.round(yMm * pxPerMm) + boxLwPx / 2,
                      Math.round(wMm * pxPerMm) - boxLwPx,
@@ -1028,7 +964,6 @@ async function savePNG() {
     }
     ctx.setLineDash([]);
 
-    // Crop-box labels
     const cropLabelMm = parseFloat(getComputedStyle(root).getPropertyValue("--crop-box-label-pt")) * 0.352778;
     ctx.font = `bold ${cropLabelMm * pxPerMm}px Helvetica, Arial, sans-serif`;
     ctx.textAlign = "left"; ctx.textBaseline = "top";
@@ -1048,10 +983,6 @@ async function savePNG() {
     }
   }
 
-  // Tag labels (TRITC / FITC / DAPI / overlay headers) - rendered bold to
-  // match the CSS .tag-label rule. Multi-line spans (e.g. "TRITC Channel<br>
-  // (Suberin)") are sized using the span's own bounding rect so the black
-  // background matches what the browser draws.
   const tagMm = parseFloat(getComputedStyle(root).getPropertyValue("--tag-pt")) * 0.352778;
   ctx.font = `bold ${tagMm * pxPerMm}px Helvetica, Arial, sans-serif`;
   ctx.textBaseline = "alphabetic";
@@ -1077,8 +1008,6 @@ async function savePNG() {
   }
   ctx.textAlign = "left";
 
-  // Species / genotype label inside cell-main (bold white text on a
-  // translucent black ribbon at top-centre).
   ctx.textBaseline = "alphabetic";
   for (const span of figEl.querySelectorAll(".species-label")) {
     const sr = span.getBoundingClientRect();
@@ -1099,9 +1028,6 @@ async function savePNG() {
   }
   ctx.textAlign = "left";
 
-  // 100 µm / 10 µm scale bars in panels a/b/c/d - walk the injected
-  // .sb-bar and .sb-lbl nodes and mirror the CSS rendering (haloed white
-  // bar + right-anchored "N μm" text with black shadow).
   for (const barEl of figEl.querySelectorAll(".sb-bar")) {
     const sr = barEl.getBoundingClientRect();
     const xMm = (sr.left - figRect.left) / cssPxPerMm;
@@ -1138,7 +1064,6 @@ async function savePNG() {
   }
   ctx.textAlign = "left";
 
-  // Panel letters (a/b/c/d/e/f)
   const letterMm = parseFloat(getComputedStyle(root).getPropertyValue("--letter-pt")) * 0.352778;
   ctx.font = `bold ${letterMm * pxPerMm}px Helvetica, Arial, sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -1188,7 +1113,6 @@ async function saveSVG() {
   const cssPxPerMm = figRect.width / totalWmm;
   const toMm = px => px / cssPxPerMm;
 
-  // Embed image assets as data URLs (so the saved SVG is self-contained)
   const imgUris = {};
   for (const img of figEl.querySelectorAll("img.layer")) {
     try { imgUris[img.id] = await fetchDataURL(img.src.split("?")[0]); }
@@ -1205,9 +1129,6 @@ async function saveSVG() {
   style.textContent = "text { font-family: Helvetica, Arial, sans-serif; }";
   svg.appendChild(style);
 
-  // ── Embed per-microscope filter <defs> so the exported SVG carries the
-  //    same boost shown on screen. Fluorescence <image>s below get the
-  //    appropriate filter="url(#...)" attribute.
   const defs = document.createElementNS(svgNS, "defs");
   defs.innerHTML = `
     <filter id="img-adjust-olympus" color-interpolation-filters="sRGB">
@@ -1256,7 +1177,6 @@ async function saveSVG() {
     };
   }
 
-  // Image cells
   for (const cell of figEl.querySelectorAll(".cell:not(.svg-cell)")) {
     const c = rectMm(cell);
     const back = document.createElementNS(svgNS, "rect");
@@ -1270,18 +1190,13 @@ async function saveSVG() {
       im.setAttribute("width", c.w); im.setAttribute("height", c.h);
       im.setAttribute("preserveAspectRatio", "xMidYMid slice");
       im.setAttribute("href", href);
-      // Tag fluorescence images with the same filter that runs on screen.
+
       const params = adjustParamsForSrc(img.src);
       if (params === ADJUST_PARAMS.olympus) im.setAttribute("filter", "url(#img-adjust-olympus)");
       else if (params === ADJUST_PARAMS.c10) im.setAttribute("filter", "url(#img-adjust-c10)");
       svg.appendChild(im);
     }
-    // Grey border around crop-cells (panels b/c/d image tiles) only.
-    // Per-side <rect>s so adjacent cells share a single 0.25 mm divider,
-    // matching the on-screen CSS (left border dropped for cells whose
-    // left neighbour is also a crop-cell; bottom border dropped for
-    // cell-aer because cell-aer-overlay's top border is the shared
-    // divider with it).
+
     if (cell.classList.contains("crop-cell")) {
       const skipLeft = ["cell-exo-tritc-ovl", "cell-exo-tritc-ovl-thr",
                         "cell-endo-fitc-ovl", "cell-endo-fitc-ovl-thr"].includes(cell.id);
@@ -1293,14 +1208,13 @@ async function saveSVG() {
         re.setAttribute("fill", "#888");
         svg.appendChild(re);
       };
-      addRect(c.x, c.y, c.w, cropBorderMm);                            // top
-      if (!skipBottom) addRect(c.x, c.y + c.h - cropBorderMm, c.w, cropBorderMm); // bottom
-      if (!skipLeft)   addRect(c.x, c.y, cropBorderMm, c.h);            // left
-      addRect(c.x + c.w - cropBorderMm, c.y, cropBorderMm, c.h);        // right
+      addRect(c.x, c.y, c.w, cropBorderMm);
+      if (!skipBottom) addRect(c.x, c.y + c.h - cropBorderMm, c.w, cropBorderMm);
+      if (!skipLeft)   addRect(c.x, c.y, cropBorderMm, c.h);
+      addRect(c.x + c.w - cropBorderMm, c.y, cropBorderMm, c.h);
     }
   }
 
-  // SVG cells (4e/4f) - embed each live <svg>'s children inside a translated <g>
   for (const cell of figEl.querySelectorAll(".svg-cell")) {
     const c = rectMm(cell);
     const src = cell.querySelector("svg");
@@ -1314,7 +1228,6 @@ async function saveSVG() {
     svg.appendChild(g);
   }
 
-  // Crop boxes + connectors on main
   if (showBoxes.checked && CROPS_META) {
     const main = rectMm(document.getElementById("cell-main"));
     const [imgW, imgH] = CROPS_META.image_size;
@@ -1327,7 +1240,7 @@ async function saveSVG() {
       const yMm = main.y + (c.y / imgH) * main.h;
       const wMm = (cw / imgW) * main.w;
       const hMm = (ch / imgH) * main.h;
-      // Inset by half-stroke so the visible outline stays INSIDE the box.
+
       const re = document.createElementNS(svgNS, "rect");
       re.setAttribute("x", xMm + 0.3); re.setAttribute("y", yMm + 0.3);
       re.setAttribute("width", wMm - 0.6); re.setAttribute("height", hMm - 0.6);
@@ -1352,7 +1265,7 @@ async function saveSVG() {
         svg.appendChild(ln);
       }
     }
-    // crop-box labels
+
     const cropLabelMm = parseFloat(getComputedStyle(root).getPropertyValue("--crop-box-label-pt")) * 0.352778;
     for (const span of figEl.querySelectorAll(".crop-box-label")) {
       const r = rectMm(span);
@@ -1368,9 +1281,6 @@ async function saveSVG() {
     }
   }
 
-  // Tag labels (TRITC / FITC / DAPI / overlay headers) - bold. Multi-line
-  // spans (e.g. "TRITC Channel<br>(Suberin)") use the span's own bbox so the
-  // background matches whatever the browser laid out.
   for (const span of figEl.querySelectorAll(".tag-label")) {
     const sr = rectMm(span);
     const re = document.createElementNS(svgNS, "rect");
@@ -1392,8 +1302,6 @@ async function saveSVG() {
     });
   }
 
-  // Species / genotype label on cell-main - bold white on translucent
-  // black ribbon at top-centre.
   for (const span of figEl.querySelectorAll(".species-label")) {
     const r = rectMm(span);
     const fontMm = parseFloat(getComputedStyle(span).fontSize) / 96 * 25.4;
@@ -1412,8 +1320,6 @@ async function saveSVG() {
     svg.appendChild(t);
   }
 
-  // 100 µm / 10 µm scale bars - native SVG primitives: black halo +
-  // white bar rect, plus a right-anchored "N μm" text with black stroke.
   for (const barEl of figEl.querySelectorAll(".sb-bar")) {
     const r = rectMm(barEl);
     const halo = document.createElementNS(svgNS, "rect");
@@ -1446,7 +1352,6 @@ async function saveSVG() {
     svg.appendChild(t);
   }
 
-  // Panel letters
   for (const span of figEl.querySelectorAll(".panel-letter")) {
     const r = rectMm(span);
     const re = document.createElementNS(svgNS, "rect");

@@ -1,7 +1,5 @@
 #!/bin/bash
-# DINOv2 + multi-scale linear head, Strategy A — decoder-isolation comparison (Fig 2f, "DINOv2+MS-Linear").
-# Replaces the DPT decoder with the Meta MS-Linear recipe (4 transformer blocks → 1x1 conv head).
-# Output: output/runs/timm/ms_linear_vit_small_patch14_dinov2_equalw_drop_shuf_dfcel_semantic7c_A/
+
 #SBATCH --job-name=dinov2_mslin
 #SBATCH --partition=gpu-qi
 #SBATCH --gres=gpu:a100_80:1

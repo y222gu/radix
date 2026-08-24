@@ -1,7 +1,5 @@
 #!/bin/bash
-# RADIX ablation: drop both channel-level augmentations (Supp Table 8 row).
-# ChannelDropout and ChannelShuffle both off (p=0). Geometric/intensity augs unchanged.
-# Output: output/runs/timm/dpt_meta_facebook_dinov3-vits16-pretrain-lvd1689m_equalw_noaug_dfcel_semantic7c_A/
+
 #SBATCH --job-name=radix_noaug
 #SBATCH --partition=gpu-qi
 #SBATCH --gres=gpu:a100_80:1

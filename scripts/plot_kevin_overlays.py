@@ -27,9 +27,6 @@ from predict import (
     run_inference, find_root_bbox, find_checkpoint, CROP_MARGIN_PCT,
 )
 
-# Canonical Fig 1a anatomy palette (paper convention, per CLAUDE.md).
-# Whole Root is not painted (background). Paint order: outer to inner, then aerenchyma
-# last so it sits on top of cortex.
 PAPER_PALETTE_HEX = {
     "Epidermis":  "#0a9396",
     "Exodermis":  "#f4a261",
@@ -39,7 +36,6 @@ PAPER_PALETTE_HEX = {
     "Aerenchyma": "#264653",
 }
 PAINT_ORDER = ["Epidermis", "Exodermis", "Cortex", "Endodermis", "Vascular", "Aerenchyma"]
-
 
 def hex_to_rgb01(h):
     h = h.lstrip("#")
@@ -55,7 +51,6 @@ MODEL_DIR = Path(
     "2026-04-22_001"
 )
 
-
 def channel_composite(raw_3ch: np.ndarray) -> np.ndarray:
     """raw_3ch is (H,W,3) in (TRITC, FITC, DAPI) order, matching load_sample_3ch.
     Returns (H,W,3) float32 in [0,1] with DAPI->cyan, FITC->yellow, TRITC->red."""
@@ -66,11 +61,10 @@ def channel_composite(raw_3ch: np.ndarray) -> np.ndarray:
     fitc = pnorm(raw_3ch[..., 1].astype(np.float32))
     dapi = pnorm(raw_3ch[..., 2].astype(np.float32))
     comp = np.zeros((*dapi.shape, 3), dtype=np.float32)
-    comp[..., 1] += dapi;  comp[..., 2] += dapi    # DAPI → cyan
-    comp[..., 0] += fitc;  comp[..., 1] += fitc    # FITC → yellow
-    comp[..., 0] += tritc                          # TRITC → red
+    comp[..., 1] += dapi;  comp[..., 2] += dapi
+    comp[..., 0] += fitc;  comp[..., 1] += fitc
+    comp[..., 0] += tritc
     return np.clip(comp, 0, 1)
-
 
 def make_overlay(rgb01: np.ndarray, sem_mask: np.ndarray, alpha: float = 0.5) -> np.ndarray:
     bio7 = unet_semantic_to_bio7(sem_mask, *sem_mask.shape)
@@ -83,12 +77,10 @@ def make_overlay(rgb01: np.ndarray, sem_mask: np.ndarray, alpha: float = 0.5) ->
         out[m] = (1 - alpha) * out[m] + alpha * color
     return np.clip(out, 0, 1)
 
-
 def short_name(sample_id: str) -> str:
     """Drop the long shared date/experiment prefix, keep the distinguishing tail."""
     tail = sample_id.split("/", 1)[1] if "/" in sample_id else sample_id
     return tail.replace("05072026_Tomato_Mutants_ML_", "")
-
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -102,10 +94,9 @@ def main():
     model.eval().to(device)
 
     all_samples = discover_samples(DATA_DIR.resolve())
-    # Skip the auto-created predictions_* candidates that have no channels (defensive).
+
     all_samples = [(sid, ch) for sid, ch in all_samples if "predictions_dinov3_dpt" not in sid]
 
-    # Group by top-level folder name.
     by_group: dict[str, list] = {}
     for sid, channels in all_samples:
         group = sid.split("/", 1)[0]
@@ -117,7 +108,6 @@ def main():
     ]
     legend_labels = list(PAINT_ORDER)
 
-    # ── Pass 1: inference + composite for every sample, keep results in memory.
     pairs_by_group: dict[str, list] = {}
     for group, items in sorted(by_group.items()):
         items.sort(key=lambda kv: kv[0])
@@ -139,12 +129,11 @@ def main():
                 sem = cv2.resize(sem, (comp_crop.shape[1], comp_crop.shape[0]),
                                  interpolation=cv2.INTER_NEAREST)
             overlay = make_overlay(comp_crop, sem)
-            # Glue orig + overlay into one image so the pair is literally touching.
+
             pair_img = np.concatenate([comp_crop, overlay], axis=1)
             pairs_by_group[group].append((sid, pair_img))
             print(f"  {sid}")
 
-    # ── Pass 2: build one combined figure with five titled subfigures.
     samples_per_row = 4
     group_order = sorted(pairs_by_group.keys())
     rows_per_group = {
@@ -152,9 +141,9 @@ def main():
         for g in group_order
     }
 
-    slot_w_in = 3.6              # width of one sample slot (orig+overlay glued)
-    slot_h_in = 1.9              # height of one slot
-    title_pad_in = 0.45          # explicit vertical space for each group title
+    slot_w_in = 3.6
+    slot_h_in = 1.9
+    title_pad_in = 0.45
 
     fig_w = slot_w_in * samples_per_row + 0.4
     section_heights = [slot_h_in * rows_per_group[g] + title_pad_in for g in group_order]
@@ -170,7 +159,7 @@ def main():
         subfigs = [subfigs]
 
     for sf, group in zip(subfigs, group_order):
-        # Reserve top space for the title so axes don't cover it.
+
         title_frac = title_pad_in / (slot_h_in * rows_per_group[group] + title_pad_in)
         sf.suptitle(group, fontsize=15, fontweight="bold", y=1.0 - title_frac * 0.25)
         n_rows = rows_per_group[group]
@@ -196,7 +185,6 @@ def main():
     plt.close(fig)
     print(f"\n→ {out_path}")
     print(f"Done. Combined plot with {len(group_order)} groups.")
-
 
 if __name__ == "__main__":
     main()

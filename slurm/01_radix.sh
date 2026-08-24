@@ -1,7 +1,5 @@
 #!/bin/bash
-# RADIX: DINOv3-S/16 + DPT-meta, Strategy A (unified, all species/microscopes).
-# Headline model in Figs 1d, 2a-e, and the "RADIX" point in Fig 2f.
-# Output: output/runs/timm/dpt_meta_facebook_dinov3-vits16-pretrain-lvd1689m_equalw_drop_shuf_dfcel_semantic7c_A/
+
 #SBATCH --job-name=radix
 #SBATCH --partition=gpu-qi
 #SBATCH --gres=gpu:a100_80:1
@@ -18,13 +16,10 @@ module load conda3/4.13.0
 eval "$(conda shell.bash hook)"
 conda activate plants
 
-# DINOv3 weights are gated on HF — pre-downloaded; run offline on the compute node.
 export HF_HUB_OFFLINE=1
 
-# Stagger CUDA init to avoid races on shared GPU nodes (see CLAUDE.md).
 sleep $((${SLURM_ARRAY_TASK_ID:-0} * 30))
 
-# CUDA smoke test with retry + self-requeue if we land on a stuck GPU.
 for attempt in 1 2 3 4 5; do
     if python -c "import torch; torch.cuda.init(); torch.randn(32,32,device='cuda')@torch.randn(32,32,device='cuda')"; then
         break

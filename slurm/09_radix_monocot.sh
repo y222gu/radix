@@ -1,7 +1,5 @@
 #!/bin/bash
-# RADIX Monocot Specialist: same architecture/recipe as RADIX but trained only on the
-# 856 monocot training samples (rice, sorghum, pearl millet). Fig 3 "Monocot Specialist".
-# Output: output/runs/timm/dpt_meta_facebook_dinov3-vits16-pretrain-lvd1689m_equalw_drop_shuf_dfcel_semantic7c_B-mono/
+
 #SBATCH --job-name=radix_mono
 #SBATCH --partition=gpu-qi
 #SBATCH --gres=gpu:a100_80:1

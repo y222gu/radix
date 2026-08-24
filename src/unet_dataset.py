@@ -21,7 +21,6 @@ from .annotation_utils import (
 from .config import SampleRecord
 from .preprocessing import load_sample_normalized
 
-
 class UNetSemanticDataset(Dataset):
     """Dataset for 7-class semantic segmentation (bg + 6 anatomical regions).
 
@@ -37,7 +36,7 @@ class UNetSemanticDataset(Dataset):
     Returns (H, W) int64 mask for cross-entropy loss.
     """
 
-    NUM_CLASSES = 7  # bg + 6 regions
+    NUM_CLASSES = 7
 
     def __init__(
         self,
@@ -55,15 +54,12 @@ class UNetSemanticDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.samples[idx]
 
-        # Load image
-        img = load_sample_normalized(sample)  # (H, W, 3) float32 [0,1]
+        img = load_sample_normalized(sample)
         h, w = img.shape[:2]
 
-        # Load annotations → 7-class semantic mask
         anns = parse_yolo_annotations(sample.annotation_path, w, h)
-        sem_mask = polygons_to_raw_semantic_mask(anns, h, w)  # (H, W) int32
+        sem_mask = polygons_to_raw_semantic_mask(anns, h, w)
 
-        # Resize
         img = cv2.resize(img, (self.img_size, self.img_size),
                          interpolation=cv2.INTER_LINEAR)
         sem_mask = cv2.resize(
@@ -71,7 +67,6 @@ class UNetSemanticDataset(Dataset):
             interpolation=cv2.INTER_NEAREST,
         ).astype(np.int32)
 
-        # Augmentation
         if self.transform is not None:
             transformed = self.transform(image=img, mask=sem_mask)
             img = transformed["image"]
@@ -81,7 +76,6 @@ class UNetSemanticDataset(Dataset):
         mask_tensor = torch.from_numpy(sem_mask.copy()).long()
 
         return {"image": img_tensor, "mask": mask_tensor, "uid": sample.uid}
-
 
 class UNetMultilabelDataset(Dataset):
     """Dataset for 6-channel multilabel segmentation.
@@ -118,30 +112,24 @@ class UNetMultilabelDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.samples[idx]
 
-        # Load image
-        img = load_sample_normalized(sample)  # (H, W, 3) float32 [0,1]
+        img = load_sample_normalized(sample)
         h, w = img.shape[:2]
 
-        # Load annotations → all 6 binary masks
         anns = parse_yolo_annotations(sample.annotation_path, w, h)
-        binary_masks = polygons_to_raw_binary_masks(anns, h, w)  # dict {0-5: (H,W)}
+        binary_masks = polygons_to_raw_binary_masks(anns, h, w)
 
-        # Stack into (6, H, W)
-        mask_stack = np.stack([binary_masks[c] for c in range(6)])  # (6, H, W) uint8
+        mask_stack = np.stack([binary_masks[c] for c in range(6)])
 
-        # Resize
         img = cv2.resize(img, (self.img_size, self.img_size),
                          interpolation=cv2.INTER_LINEAR)
         resized_masks = np.stack([
             cv2.resize(mask_stack[c], (self.img_size, self.img_size),
                        interpolation=cv2.INTER_NEAREST)
             for c in range(6)
-        ])  # (6, H, W) uint8
+        ])
 
-        # Augmentation — use first mask channel for albumentations,
-        # then apply same spatial transform to all channels
         if self.transform is not None:
-            # Build additional_targets for all 6 mask channels
+
             additional_targets = {f"mask{i}": "mask" for i in range(1, 6)}
             aug = A.Compose(
                 self.transform.transforms,
@@ -156,6 +144,6 @@ class UNetMultilabelDataset(Dataset):
                                      [transformed[f"mask{i}"] for i in range(1, 6)])
 
         img_tensor = torch.from_numpy(img.copy()).permute(2, 0, 1).float()
-        mask_tensor = torch.from_numpy(resized_masks.copy()).float()  # (6, H, W)
+        mask_tensor = torch.from_numpy(resized_masks.copy()).float()
 
         return {"image": img_tensor, "mask": mask_tensor, "uid": sample.uid}

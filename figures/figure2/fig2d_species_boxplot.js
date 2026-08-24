@@ -1,25 +1,7 @@
-/**
- * fig2d_species_boxplot.js
- *
- * Renderer for Figure 2 panel d: per-sample mIoU (Bio-7) grouped by
- * species, restricted to the in-distribution test split. Four boxes
- * (Tomato, Rice, Sorghum, Millet). Each box: Q1 / median / Q3 with
- * 1.5×IQR whiskers; jittered sample points overlay the box.
- *
- * Data source: per_sample_iou.csv
- *   relevant columns = species, mean_IoU, split
- *
- * Loaded by assemble_figure2.html for live inline rendering.
- */
+
+
 (function () {
 
-// Display order: Rice → Millet → Sorghum → Solanums. `dataKey` is the
-// value in per_sample_iou.csv's `species` column (the CSV uses "Solanum"
-// singular for the tomato samples since the set spans multiple Solanum
-// species - S. lycopersicum, S. cheesmaniae). `label` is the plural form
-// shown on the x-axis tick. Colours match figure 4e–h (SPECIES_INFO in
-// fig4_corr_common.js) so the species palette is consistent across the
-// paper's downstream-correlation and per-species-mIoU panels.
 const GROUPS = [
     { dataKey: "Rice",    label: "Rice",     color: "#9ab2d4" },
     { dataKey: "Millet",  label: "Millet",   color: "#9393c9" },
@@ -28,21 +10,13 @@ const GROUPS = [
 ];
 
 const DEFAULT_PANEL_W = 80, DEFAULT_PANEL_H = 42.16;
-// Margins mirror fig2e_microscope_boxplot and fig2f_scatter so all three
-// row-2-bottom panels share the same x-axis canvas y AND the same x-title
-// canvas y. M.top = 3 - the absolute minimum so the "n=" key (1.76 mm
-// font, cap-top at M.top − 2.95) just clears the panel's top edge. The
-// chart title is empty so no extra room is needed at the top.
+
 const M = { top: 3, right: 3, bottom: 13, left: 8 };
-const TITLE_FONT_MM = 2.47;                 // 7 pt
+const TITLE_FONT_MM = 2.47;
 const LABEL_TILT = -25;
-// X-title offset matched across panels d/e/f (9.47 mm below the axis) so
-// the three "Species" / "Microscope" / "Test mIoU" titles share the same
-// canvas y baseline. The offset is 2 mm larger than before to absorb the
-// 2 mm plot-region lift while keeping the title at the same canvas y.
+
 const X_TITLE_BASELINE_OFFSET = 9.47;
 const Y_TITLE_CENTRE_OFFSET   = 5.94;
-
 
 const _csvCache = new Map();
 async function _loadCsv(path) {
@@ -51,7 +25,6 @@ async function _loadCsv(path) {
     }
     return _csvCache.get(path);
 }
-
 
 function boxStats(vals) {
     const s = vals.filter(v => v != null && !isNaN(v)).sort(d3.ascending);
@@ -64,7 +37,6 @@ function boxStats(vals) {
     const whiskerHi = Math.min(d3.max(s), q3 + 1.5 * iqr);
     return { q1, med, q3, whiskerLo, whiskerHi, n: s.length, vals: s };
 }
-
 
 async function render(svgEl, opts) {
     const {
@@ -211,8 +183,6 @@ async function render(svgEl, opts) {
             .text(gp.label);
     }
 
-    // Sample counts - "n=" key in the M.top whitespace; per-box counts
-    // float just above each box's upper whisker cap.
     const N_FS = 1.76;
     const N_KEY_BASELINE_Y = -1.7;
     const N_GAP = 0.85;
@@ -232,7 +202,6 @@ async function render(svgEl, opts) {
             .text(`${gp.vals.length}`);
     }
 }
-
 
 window.Fig2SpeciesBoxplot = { render, GROUPS,
                               PANEL_W: DEFAULT_PANEL_W, PANEL_H: DEFAULT_PANEL_H };

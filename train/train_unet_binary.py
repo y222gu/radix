@@ -47,14 +47,9 @@ from src.config import (
 from src.unet_dataset import UNetMultilabelDataset
 from src.splits import get_split, print_split_summary
 
-NUM_CLASSES = 6  # raw annotation classes 0-5
+NUM_CLASSES = 6
 
-# Per-class pos_weight: higher for thin/rare structures
 DEFAULT_POS_WEIGHTS = [1.0, 10.0, 5.0, 1.0, 5.0, 1.0]
-#                      Root  Aer   O.Endo I.Endo O.Exo I.Exo
-
-
-# ── Optimizer / scheduler factories ──────────────────────────────────────────
 
 def _build_optimizer(name: str, param_groups: list, lr: float, weight_decay: float):
     if name == "adamw":
@@ -65,7 +60,6 @@ def _build_optimizer(name: str, param_groups: list, lr: float, weight_decay: flo
         return torch.optim.SGD(param_groups, lr=lr, weight_decay=weight_decay,
                                momentum=0.9)
     raise ValueError(f"Unknown optimizer: {name}")
-
 
 def _build_scheduler(name: str, optimizer, max_epochs: int, eta_min: float):
     if name == "cosine":
@@ -78,7 +72,6 @@ def _build_scheduler(name: str, optimizer, max_epochs: int, eta_min: float):
         return torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", factor=0.5, patience=10)
     raise ValueError(f"Unknown scheduler: {name}")
-
 
 class MultilabelSegModule(pl.LightningModule):
     """6-channel multilabel segmentation (BCE + Dice per channel)."""
@@ -124,10 +117,10 @@ class MultilabelSegModule(pl.LightningModule):
         return self.model(x)
 
     def _shared_step(self, batch, stage):
-        images = batch["image"]   # (B, 3, H, W)
-        masks = batch["mask"]     # (B, 6, H, W)
+        images = batch["image"]
+        masks = batch["mask"]
 
-        logits = self(images)     # (B, 6, H, W)
+        logits = self(images)
 
         bce = F.binary_cross_entropy_with_logits(
             logits, masks, pos_weight=self.pos_weight.view(1, -1, 1, 1))
@@ -136,7 +129,6 @@ class MultilabelSegModule(pl.LightningModule):
 
         preds = (torch.sigmoid(logits) > 0.5).float()
 
-        # Per-channel dice scores
         with torch.no_grad():
             for c in range(NUM_CLASSES):
                 inter = (preds[:, c] * masks[:, c]).sum()
@@ -169,7 +161,6 @@ class MultilabelSegModule(pl.LightningModule):
         optimizer = _build_optimizer(self.optimizer_name, param_groups, self.lr, self.weight_decay)
         scheduler = _build_scheduler(self.scheduler_name, optimizer, self.trainer.max_epochs, self.eta_min)
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -233,7 +224,6 @@ def main():
         dice_weight=args.dice_weight,
     )
 
-    # Run name: model_pretrain_classweight_augmentation_loss_strategy
     pw = args.pos_weight if args.pos_weight else [1.0, 10.0, 5.0, 1.0, 5.0, 1.0]
     weight_tag = "equalw" if all(w == 1.0 for w in pw) else "defaultw"
 
@@ -357,7 +347,6 @@ def main():
 
     trainer.fit(model, train_dl, val_dl)
 
-    # Plot loss curves
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -381,7 +370,6 @@ def main():
         axes[0].legend()
         axes[0].grid(True, alpha=0.3)
 
-        # Per-class dice scores
         for c in range(NUM_CLASSES):
             col = f"val_dice_{ANNOTATED_CLASSES[c]}"
             if col in df.columns:
@@ -399,13 +387,11 @@ def main():
         plt.close(fig)
         print(f"Loss curve saved to {plot_path}")
 
-    # Test — evaluate without logging to TensorBoard (avoid polluting training curves)
     print("\n" + "=" * 60)
     print("EVALUATING ON TEST SET")
     trainer.logger = False
     test_results = trainer.test(model, test_dl, ckpt_path="best")
     print(f"Test results: {test_results}")
-
 
 if __name__ == "__main__":
     main()

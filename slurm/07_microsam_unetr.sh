@@ -1,9 +1,5 @@
 #!/bin/bash
-# MicroSAM (SAM ViT-B vit_b_lm) + UNETR with LoRA, Strategy A — SAM-foundation comparison
-# (Fig 2f, "MicroSAM+UNETR"). LoRA rank 4, alpha 1.0 on attention projections; UNETR decoder
-# taps blocks 2/5/8/11. Batch size 8 per the manuscript (full fine-tune at 1024x1024 would
-# exceed memory). Adapters + decoder + head trainable; rest of encoder frozen.
-# Output: output/runs/sam_semantic/sam_vit_b_lm_lora_r4_semantic7c_A/
+
 #SBATCH --job-name=microsam_unetr
 #SBATCH --partition=gpu-qi
 #SBATCH --gres=gpu:a100_80:1

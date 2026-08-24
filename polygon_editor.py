@@ -59,13 +59,11 @@ from PyQt5.QtWidgets import (
     QDialog, QTextBrowser, QDoubleSpinBox
 )
 
-# Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.config import ANNOTATED_CLASSES, CLASS_COLORS_RGB, SampleRecord
 from src.preprocessing import load_sample_normalized, to_uint8
 from src.annotation_utils import parse_yolo_annotations, polygon_to_mask
-
 
 def _extract_ring_contours(mask: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
     """Extract outer and inner contours from a ring-shaped mask.
@@ -75,13 +73,12 @@ def _extract_ring_contours(mask: np.ndarray) -> Tuple[Optional[np.ndarray], Opti
     Returns:
         (outer_polygon, inner_polygon) — each Nx2 int32 or None if not found.
     """
-    # Close small gaps in the ring before extracting contours
+
     h, w = mask.shape[:2]
     kern_size = max(7, int(min(h, w) * 0.015) | 1)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kern_size, kern_size))
     closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-    # Find the outer boundary
     contours_ext, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours_ext:
         return None, None
@@ -90,12 +87,10 @@ def _extract_ring_contours(mask: np.ndarray) -> Tuple[Optional[np.ndarray], Opti
         return None, None
     outer_poly = outer_contour.reshape(-1, 2).astype(np.int32)
 
-    # Fill the outer contour to find the hole (inner boundary)
     filled_solid = np.zeros_like(closed)
     cv2.fillPoly(filled_solid, [outer_contour], 1)
     hole = filled_solid & (~closed.astype(bool)).astype(np.uint8)
 
-    # Find the largest hole contour = inner boundary
     hole_contours, _ = cv2.findContours(hole, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not hole_contours:
         return outer_poly, None
@@ -106,15 +101,10 @@ def _extract_ring_contours(mask: np.ndarray) -> Tuple[Optional[np.ndarray], Opti
 
     return outer_poly, inner_poly
 
-
-# Target class → annotation class mapping for ring structures
-# Target 2 (endodermis ring) → annotation 2 (outer endo) + 3 (inner endo)
-# Target 4 (exodermis ring) → annotation 4 (outer exo) + 5 (inner exo)
 _RING_CLASS_MAP = {
-    2: (2, 3),   # endodermis: outer=2, inner=3
-    4: (4, 5),   # exodermis: outer=4, inner=5
+    2: (2, 3),
+    4: (4, 5),
 }
-
 
 def parse_npz_predictions(path: Path, img_w: int = 0, img_h: int = 0) -> List[dict]:
     """Parse an .npz prediction file containing binary masks into polygon dicts.
@@ -130,15 +120,15 @@ def parse_npz_predictions(path: Path, img_w: int = 0, img_h: int = 0) -> List[di
         List of dicts with keys: class_id (int), polygon (Nx2 int32 array).
     """
     data = np.load(str(path), allow_pickle=True)
-    masks = data['masks']      # (N, H, W) uint8
-    labels = data['labels']    # (N,)
+    masks = data['masks']
+    labels = data['labels']
     annotations = []
     for i in range(len(labels)):
         label = int(labels[i])
         mask = masks[i].astype(np.uint8)
 
         if label in _RING_CLASS_MAP:
-            # Ring mask: split into outer + inner annotation polygons
+
             outer_cls, inner_cls = _RING_CLASS_MAP[label]
             outer_poly, inner_poly = _extract_ring_contours(mask)
             if outer_poly is not None:
@@ -146,7 +136,7 @@ def parse_npz_predictions(path: Path, img_w: int = 0, img_h: int = 0) -> List[di
             if inner_poly is not None:
                 annotations.append({"class_id": inner_cls, "polygon": inner_poly})
         else:
-            # Non-ring class: use largest external contour
+
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if not contours:
                 continue
@@ -156,9 +146,6 @@ def parse_npz_predictions(path: Path, img_w: int = 0, img_h: int = 0) -> List[di
             polygon = contour.reshape(-1, 2).astype(np.int32)
             annotations.append({"class_id": label, "polygon": polygon})
     return annotations
-
-
-# ── QC checks ─────────────────────────────────────────────────────────────
 
 def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) -> List[str]:
     """Run anatomical constraint checks on annotation polygons.
@@ -172,18 +159,15 @@ def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) ->
     """
     violations = []
 
-    # Group polygons by class
     by_class: dict = {}
     for p in polygons:
         cid = p["class_id"]
         by_class.setdefault(cid, []).append(p)
 
-    # Helper: rasterize a single polygon to mask
     def _mask(poly_dict):
         pts = poly_dict["polygon"].astype(np.float32)
         return polygon_to_mask(pts, img_h, img_w)
 
-    # Helper: check if mask_inner is contained within mask_outer (2% tolerance)
     def _is_contained(mask_inner, mask_outer, tolerance=0.02):
         outside = int((mask_inner & ~mask_outer).sum())
         total = int(mask_inner.sum())
@@ -191,14 +175,12 @@ def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) ->
             return True
         return outside <= tolerance * total
 
-    # Cache masks
     mask_cache = {}
     def _get_mask(idx):
         if idx not in mask_cache:
             mask_cache[idx] = _mask(polygons[idx])
         return mask_cache[idx]
 
-    # Get single-instance masks by class (for outer epidermis, endo, exo)
     def _class_mask(cid):
         """Union mask for all polygons of a given class."""
         if cid not in by_class:
@@ -209,11 +191,10 @@ def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) ->
             result = result | m
         return result
 
-    # Helper: check no boundary-crossing intersection between two masks
     def _no_boundary_crossing(mask_a, mask_b, name_a, name_b):
         overlap = int((mask_a & mask_b).sum())
         if overlap == 0:
-            return  # no overlap, OK
+            return
         sa, sb = int(mask_a.sum()), int(mask_b.sum())
         a_in_b = (sa - overlap) <= 0.02 * sa if sa > 0 else True
         b_in_a = (sb - overlap) <= 0.02 * sb if sb > 0 else True
@@ -221,7 +202,6 @@ def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) ->
             violations.append(
                 f"Boundary intersection between {name_a} and {name_b}")
 
-    # Check 1: All polygons within outer epidermis (class 0) — skip if missing
     root_mask = _class_mask(0)
     if root_mask is not None:
         for p in polygons:
@@ -232,7 +212,6 @@ def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) ->
                 cname = CLASS_SHORT_NAMES.get(p["class_id"], f"Class {p['class_id']}")
                 violations.append(f"{cname} polygon extends outside Outer Epidermis boundary")
 
-    # Check 2: Inner exodermis (5) within outer exodermis (4) — skip if either missing
     if 4 in by_class and 5 in by_class:
         outer_exo = _class_mask(4)
         inner_exo = _class_mask(5)
@@ -240,7 +219,6 @@ def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) ->
             violations.append("Inner Exodermis (I.Exo) extends outside Outer Exodermis (O.Exo)")
         _no_boundary_crossing(outer_exo, inner_exo, "O.Exo", "I.Exo")
 
-    # Check 3: Outer endodermis (2) within inner exodermis (5) — skip if either missing
     if 2 in by_class and 5 in by_class:
         outer_endo = _class_mask(2)
         inner_exo = _class_mask(5)
@@ -248,7 +226,6 @@ def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) ->
             violations.append("Outer Endodermis (O.Endo) extends outside Inner Exodermis (I.Exo)")
         _no_boundary_crossing(outer_endo, inner_exo, "O.Endo", "I.Exo")
 
-    # Check 4: Inner endodermis (3) within outer endodermis (2) — skip if either missing
     if 2 in by_class and 3 in by_class:
         outer_endo = _class_mask(2)
         inner_endo = _class_mask(3)
@@ -256,12 +233,11 @@ def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) ->
             violations.append("Inner Endodermis (I.Endo) extends outside Outer Endodermis (O.Endo)")
         _no_boundary_crossing(outer_endo, inner_endo, "O.Endo", "I.Endo")
 
-    # Check 5: Aerenchyma in cortex only — skip if class 1 missing
     if 1 in by_class:
         outer_endo = _class_mask(2)
-        # Outer boundary of cortex
+
         if 5 in by_class:
-            cortex_outer = _class_mask(5)  # inner exodermis
+            cortex_outer = _class_mask(5)
         elif root_mask is not None:
             cortex_outer = root_mask
         else:
@@ -273,9 +249,8 @@ def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) ->
                 m = _mask(p)
                 if not _is_contained(m, cortex_mask, tolerance=0.02):
                     violations.append("Aerenchyma polygon extends outside cortex region")
-                    break  # report once
+                    break
 
-    # Check 6: Required classes — must have root, O.Endo, I.Endo, O.Exo, I.Exo
     required = {0: "Outer Epidermis", 2: "O.Endo", 3: "I.Endo", 4: "O.Exo", 5: "I.Exo"}
     for cid, name in required.items():
         if cid not in by_class:
@@ -283,37 +258,26 @@ def run_qc_checks(polygons: List[dict], img_h: int = 1024, img_w: int = 1024) ->
 
     return violations
 
-
-# ── Editor modes ──────────────────────────────────────────────────────────
 MODE_CORRECT_GT = "Correct GT with Pred"
 MODE_CORRECT_PRED = "Correct Predictions"
 MODE_CREATE_GT = "Create GT"
 
-
-# Colors for visualization (QColor format)
 CLASS_QCOLORS = {
-    0: QColor(0, 0, 255, 180),      # Outer Epidermis - Blue
-    1: QColor(255, 255, 0, 180),    # Aerenchyma - Yellow
-    2: QColor(0, 255, 0, 180),      # Outer Endodermis - Green
-    3: QColor(255, 0, 0, 180),      # Inner Endodermis - Red
-    4: QColor(255, 128, 0, 180),    # Outer Exodermis - Orange
-    5: QColor(128, 0, 255, 180),    # Inner Exodermis - Purple
+    0: QColor(0, 0, 255, 180),
+    1: QColor(255, 255, 0, 180),
+    2: QColor(0, 255, 0, 180),
+    3: QColor(255, 0, 0, 180),
+    4: QColor(255, 128, 0, 180),
+    5: QColor(128, 0, 255, 180),
 }
 
-SELECTED_COLOR = QColor(255, 255, 255, 220)  # White for selected polygon
+SELECTED_COLOR = QColor(255, 255, 255, 220)
 
 CLASS_SHORT_NAMES = {
     0: "O. Epi", 1: "Aer", 2: "O.Endo", 3: "I.Endo", 4: "O.Exo", 5: "I.Exo",
 }
 
-# Display-name override for the editor UI: class 0 is rendered as "Outer
-# Epidermis" instead of the "Whole Root" used elsewhere in the codebase.
-# All editor-facing lookups use CLASS_DISPLAY_NAMES; src.config.ANNOTATED_CLASSES
-# stays unchanged so training, eval, and prediction code is unaffected.
 CLASS_DISPLAY_NAMES = {**ANNOTATED_CLASSES, 0: "Outer Epidermis"}
-
-
-# ── Lightweight sample discovery ──────────────────────────────────────────
 
 def discover_samples(image_dir: Path, annotation_dir: Optional[Path] = None,
                      prediction_dir: Optional[Path] = None,
@@ -343,7 +307,6 @@ def discover_samples(image_dir: Path, annotation_dir: Optional[Path] = None,
             if not tif_files:
                 continue
 
-            # Check that the three required channels exist
             channel_map = {}
             for f in tif_files:
                 ch = f.rsplit("_", 1)[-1].split(".")[0].upper()
@@ -360,21 +323,20 @@ def discover_samples(image_dir: Path, annotation_dir: Optional[Path] = None,
             parts = rel_path.parts
 
             if len(parts) == 4:
-                # Structured: Species/Microscope/Experiment/SampleName
+
                 species, microscope, experiment, sample_name = parts
             else:
-                # Generic: use folder name as sample_name
+
                 sample_name = full_path.name
                 species = microscope = experiment = "_"
 
             uid = f"{species}_{microscope}_{experiment}_{sample_name}"
             ann_name = uid + ".txt"
 
-            # For generic layout, also check using just the sample folder name
             ann_name_short = sample_name + ".txt"
 
             has_ann = ann_name in ann_files or ann_name_short in ann_files
-            # Check for both .txt and .npz prediction files
+
             pred_name_npz = uid + ".npz"
             pred_name_npz_short = sample_name + ".npz"
             has_pred = (ann_name in pred_files or ann_name_short in pred_files
@@ -385,7 +347,6 @@ def discover_samples(image_dir: Path, annotation_dir: Optional[Path] = None,
             if require_prediction and not has_pred:
                 continue
 
-            # Resolve actual annotation path
             if annotation_dir:
                 if ann_name in ann_files:
                     ann_path = annotation_dir / ann_name
@@ -405,7 +366,6 @@ def discover_samples(image_dir: Path, annotation_dir: Optional[Path] = None,
     samples.sort(key=lambda s: s.uid)
     return samples
 
-
 class PolygonCanvas(QWidget):
     """Canvas widget that displays an image with polygon overlays, zoom/pan, and interaction."""
 
@@ -422,26 +382,23 @@ class PolygonCanvas(QWidget):
         self.drawing_class = 1
         self.hidden_classes: set = set()
 
-        # Vertex editing state
         self.editing_mode = False
         self._dragging_vertex: Optional[int] = None
         self._selected_vertex: Optional[int] = None
-        self._selected_vertices: set = set()  # multi-select set
+        self._selected_vertices: set = set()
         self._drag_started = False
         self._rubber_band_start: Optional[Tuple[float, float]] = None
         self._rubber_band_end: Optional[Tuple[float, float]] = None
 
-        # Brush editing state
         self.brush_mode = False
-        self.brush_radius = 20  # pixels in image space
-        self._brush_mask: Optional[np.ndarray] = None  # (H, W) uint8
+        self.brush_radius = 20
+        self._brush_mask: Optional[np.ndarray] = None
         self._brush_class_id: int = 0
         self._brush_painting = False
         self._brush_erasing = False
         self._brush_cursor_pos: Optional[Tuple[float, float]] = None
-        self._brush_orig_idx: Optional[int] = None  # index of polygon being edited
+        self._brush_orig_idx: Optional[int] = None
 
-        # Edge hover state for adding nodes
         self._hover_edge_idx: Optional[int] = None
         self._hover_midpoint: Optional[Tuple[float, float]] = None
         self._hover_timer = QTimer(self)
@@ -451,7 +408,6 @@ class PolygonCanvas(QWidget):
         self._pending_hover_edge: Optional[int] = None
         self._pending_hover_mid: Optional[Tuple[float, float]] = None
 
-        # Zoom / pan state
         self.zoom_level = 1.0
         self.pan_offset = [0.0, 0.0]
         self._panning = False
@@ -461,8 +417,6 @@ class PolygonCanvas(QWidget):
         self.setStyleSheet("border: 1px solid #555; background-color: #1a1a1a;")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMouseTracking(True)
-
-    # ── Edge hover helpers ────────────────────────────────────────────────
 
     @staticmethod
     def _project_onto_segment(px, py, ax, ay, bx, by) -> Tuple[float, float, float]:
@@ -515,8 +469,6 @@ class PolygonCanvas(QWidget):
             self._hover_midpoint = None
             self.update()
 
-    # ── Zoom / pan helpers ────────────────────────────────────────────────
-
     def reset_view(self):
         self.zoom_level = 1.0
         self.pan_offset = [0.0, 0.0]
@@ -559,13 +511,11 @@ class PolygonCanvas(QWidget):
         self.pan_offset = list(pan)
         self.update()
 
-    # ── Data setters ──────────────────────────────────────────────────────
-
     def set_image(self, img: np.ndarray):
-        # Release old data before allocating new
+
         self._qimage = None
         self.base_image = None
-        # Store contiguous copy — QImage references this buffer directly
+
         self.base_image = np.ascontiguousarray(img)
         self._qimage = QImage(
             self.base_image.data, self.base_image.shape[1], self.base_image.shape[0],
@@ -580,8 +530,6 @@ class PolygonCanvas(QWidget):
 
     def update_display(self):
         self.update()
-
-    # ── Paint ─────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
         if self.base_image is None:
@@ -599,7 +547,6 @@ class PolygonCanvas(QWidget):
         painter.scale(s, s)
         painter.drawImage(QRectF(0, 0, w, h), self._qimage)
 
-        # Draw unselected polygons first, then selected on top
         for idx, poly_data in enumerate(self.polygons):
             if idx == self.selected_idx:
                 continue
@@ -619,7 +566,7 @@ class PolygonCanvas(QWidget):
             fill_color.setAlpha(opacity)
             painter.setBrush(QBrush(fill_color))
             painter.drawPolygon(qpoly)
-        # Draw selected polygon last (on top)
+
         if self.selected_idx is not None and 0 <= self.selected_idx < len(self.polygons):
             poly_data = self.polygons[self.selected_idx]
             polygon = poly_data["polygon"]
@@ -649,7 +596,6 @@ class PolygonCanvas(QWidget):
                     painter.setBrush(QBrush(QColor(255, 0, 255, 160)))
                     painter.drawEllipse(QPointF(float(pt[0]), float(pt[1])), handle_r, handle_r)
 
-            # Draw rubber band selection rectangle
             if self._rubber_band_start is not None and self._rubber_band_end is not None:
                 rx0, ry0 = self._rubber_band_start
                 rx1, ry1 = self._rubber_band_end
@@ -679,7 +625,6 @@ class PolygonCanvas(QWidget):
                     p2 = self.drawing_points[i + 1]
                     painter.drawLine(QPointF(p1[0], p1[1]), QPointF(p2[0], p2[1]))
 
-        # Brush mode: mask overlay + cursor
         if self.brush_mode and self._brush_mask is not None:
             mask_h, mask_w = self._brush_mask.shape
             color = CLASS_QCOLORS.get(self._brush_class_id, QColor(128, 128, 128, 180))
@@ -692,7 +637,6 @@ class PolygonCanvas(QWidget):
 
         painter.resetTransform()
 
-        # Brush cursor (drawn in widget space, after resetTransform)
         if self.brush_mode and self._brush_cursor_pos is not None:
             bx, by = self._brush_cursor_pos
             wp = self.image_to_widget(bx, by)
@@ -701,7 +645,7 @@ class PolygonCanvas(QWidget):
             painter.setPen(QPen(cursor_color, 1.5, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
             painter.drawEllipse(wp, radius_w, radius_w)
-            # Brush size text
+
             painter.setPen(QPen(Qt.white))
             painter.setFont(QFont("Arial", 10))
             painter.drawText(int(wp.x() + radius_w + 5), int(wp.y() - 5),
@@ -728,12 +672,10 @@ class PolygonCanvas(QWidget):
         super().resizeEvent(event)
         self.update()
 
-    # ── Mouse events ──────────────────────────────────────────────────────
-
     def wheelEvent(self, event):
         if self.base_image is None:
             return
-        # In brush mode: Ctrl+scroll = resize brush, scroll = zoom (default)
+
         if self.brush_mode and (event.modifiers() & Qt.ControlModifier):
             delta = 3 if event.angleDelta().y() > 0 else -3
             self.brush_radius = max(2, min(self.brush_radius + delta, 200))
@@ -768,15 +710,13 @@ class PolygonCanvas(QWidget):
         if not (0 <= img_x < w and 0 <= img_y < h):
             return
 
-        # Brush mode: when editing existing polygon, erase by default (Shift = paint)
-        # When drawing new polygon (no original), paint by default (Shift = erase)
         if self.editable and self.brush_mode:
             shift_held = bool(event.modifiers() & Qt.ShiftModifier)
             if self._brush_orig_idx is None:
-                # New polygon: default = paint, Shift = erase
+
                 self._brush_erasing = shift_held
             else:
-                # Editing existing: default = erase, Shift = paint
+
                 self._brush_erasing = not shift_held
             self._brush_painting = True
             self._apply_brush_stroke(ix, iy)
@@ -821,7 +761,6 @@ class PolygonCanvas(QWidget):
                     self.update()
                     return
 
-            # Shift+click in edit mode: insert a free vertex at cursor position
             if event.modifiers() & Qt.ShiftModifier:
                 insert_after = self._selected_vertex if self._selected_vertex is not None else len(polygon) - 1
                 parent = self.get_editor_parent()
@@ -843,7 +782,6 @@ class PolygonCanvas(QWidget):
                 self.update()
                 return
 
-            # Start rubber band selection for multi-vertex select
             self._rubber_band_start = (ix, iy)
             self._rubber_band_end = (ix, iy)
             self._dragging_vertex = None
@@ -867,7 +805,7 @@ class PolygonCanvas(QWidget):
                     parent.update_status(f"Selected polygon {self.selected_idx} ({cname})")
 
     def mouseMoveEvent(self, event):
-        # Brush mode: update cursor + paint
+
         if self.brush_mode and self.base_image is not None:
             ix, iy = self.widget_to_image(event.pos().x(), event.pos().y())
             self._brush_cursor_pos = (ix, iy)
@@ -879,7 +817,7 @@ class PolygonCanvas(QWidget):
                     self._brush_erasing = not shift_held
                 self._apply_brush_stroke(ix, iy)
             self.update()
-            # Still allow panning with middle/right button
+
             if self._panning and self._pan_start is not None:
                 s = self._effective_scale()
                 if s > 0:
@@ -891,7 +829,6 @@ class PolygonCanvas(QWidget):
                     self._sync_view()
             return
 
-        # Rubber band selection drag
         if self._rubber_band_start is not None and self.editing_mode:
             ix, iy = self.widget_to_image(event.pos().x(), event.pos().y())
             self._rubber_band_end = (ix, iy)
@@ -915,7 +852,7 @@ class PolygonCanvas(QWidget):
             if result is not None:
                 edge_idx, proj_x, proj_y = result
                 if edge_idx != self._pending_hover_edge:
-                    # New edge — use timer for debounce
+
                     self._hover_timer.stop()
                     self._hover_edge_idx = None
                     self._hover_midpoint = None
@@ -924,7 +861,7 @@ class PolygonCanvas(QWidget):
                     self._hover_timer.start()
                     self.update()
                 else:
-                    # Same edge — update position to follow mouse
+
                     self._pending_hover_mid = (proj_x, proj_y)
                     if self._hover_edge_idx is not None:
                         self._hover_midpoint = (proj_x, proj_y)
@@ -945,12 +882,11 @@ class PolygonCanvas(QWidget):
             self._sync_view()
 
     def mouseReleaseEvent(self, event):
-        # Brush mode: stop painting
+
         if self.brush_mode and event.button() == Qt.LeftButton:
             self._brush_painting = False
             return
 
-        # Finalize rubber band selection
         if self._rubber_band_start is not None and event.button() == Qt.LeftButton:
             if (self._rubber_band_end is not None and self.selected_idx is not None
                     and 0 <= self.selected_idx < len(self.polygons)):
@@ -958,7 +894,7 @@ class PolygonCanvas(QWidget):
                 rx1, ry1 = self._rubber_band_end
                 x_min, x_max = min(rx0, rx1), max(rx0, rx1)
                 y_min, y_max = min(ry0, ry1), max(ry0, ry1)
-                # Only count as drag-select if the rectangle is non-trivial
+
                 s = self._effective_scale()
                 min_drag = 4.0 / s if s > 0 else 4.0
                 if abs(rx1 - rx0) > min_drag or abs(ry1 - ry0) > min_drag:
@@ -976,7 +912,7 @@ class PolygonCanvas(QWidget):
                             parent.update_status(
                                 f"Selected {len(self._selected_vertices)} vertices (Delete to remove)")
                 else:
-                    # Tiny drag = click on empty space, deselect
+
                     self._selected_vertex = None
                     self._selected_vertices.clear()
             self._rubber_band_start = None
@@ -1052,19 +988,16 @@ class PolygonCanvas(QWidget):
             return False
         polygon = self.polygons[self.selected_idx]["polygon"]
 
-        # Collect all indices to delete (multi-select or single)
         to_delete = set(self._selected_vertices)
         if self._selected_vertex is not None:
             to_delete.add(self._selected_vertex)
         if not to_delete:
             return False
 
-        # Ensure at least 3 vertices remain
         remaining = len(polygon) - len(to_delete)
         if remaining < 3:
             return False
 
-        # Delete in reverse order to keep indices valid
         self.polygons[self.selected_idx]["polygon"] = np.delete(
             polygon, sorted(to_delete), axis=0
         )
@@ -1082,8 +1015,6 @@ class PolygonCanvas(QWidget):
             self.update()
             return removed
         return None
-
-    # ── Brush mode ────────────────────────────────────────────────────────
 
     def start_brush_mode(self, polygon_idx: Optional[int]):
         """Enter brush mode. Rasterizes selected polygon to mask, or starts blank."""
@@ -1140,7 +1071,6 @@ class PolygonCanvas(QWidget):
         value = 0 if self._brush_erasing else 1
         cv2.circle(self._brush_mask, (cx, cy), self.brush_radius, int(value), -1)
 
-
 class AnnotationEditor(QMainWindow):
     """Main window for annotation editing."""
 
@@ -1149,7 +1079,7 @@ class AnnotationEditor(QMainWindow):
         self.data_dir: Optional[Path] = data_dir
         self.editor_mode: str = MODE_CREATE_GT
         self._info_dialog: Optional[QDialog] = None
-        self._all_samples: List[SampleRecord] = []  # unfiltered
+        self._all_samples: List[SampleRecord] = []
         self.samples: List[SampleRecord] = []
 
         self.current_idx = 0
@@ -1159,17 +1089,15 @@ class AnnotationEditor(QMainWindow):
         self._mode_entry_snapshot: Optional[List[dict]] = None
         self._undo_depth_at_mode_entry: int = 0
         self._max_undo = 50
-        self._editing_polygon_idx: Optional[int] = None  # tracks polygon being edited
-        self._deleting_mode: bool = False  # True when in delete confirmation modal
+        self._editing_polygon_idx: Optional[int] = None
+        self._deleting_mode: bool = False
 
-        # QC status persistence: {"sample_uid": "passed"|"failed"}, absent = to_be_qc
         self._qc_status: dict = {}
 
-        # Display-only brightness/gamma (do not affect saved data)
         self._raw_image: Optional[np.ndarray] = None
-        self._brightness = 0       # -100 to +100
-        self._gamma = 100          # 10 to 300 (displayed as 0.1 to 3.0)
-        self._polygon_opacity = 60  # 0 to 255 (slider 0-100%)
+        self._brightness = 0
+        self._gamma = 100
+        self._polygon_opacity = 60
 
         self.setWindowTitle("Plant Roots Polygon Editor")
         self.setMinimumSize(1400, 800)
@@ -1179,8 +1107,6 @@ class AnnotationEditor(QMainWindow):
 
         if self.data_dir:
             self._reload_samples()
-
-    # ── Directory helpers ─────────────────────────────────────────────────
 
     def _image_dir(self) -> Optional[Path]:
         return self.data_dir / "image" if self.data_dir else None
@@ -1206,10 +1132,8 @@ class AnnotationEditor(QMainWindow):
         elif mode == MODE_CORRECT_PRED:
             if not self._prediction_dir().exists():
                 return f"prediction/ directory not found in {self.data_dir}"
-        # MODE_CREATE_GT only needs image/
-        return None
 
-    # ── Sample loading ────────────────────────────────────────────────────
+        return None
 
     def _reload_samples(self):
         """Discover samples based on current mode and data directory."""
@@ -1221,7 +1145,6 @@ class AnnotationEditor(QMainWindow):
             self.update_status(err)
             return
 
-        # Load QC status for this data directory
         self._load_qc_status()
 
         img_dir = self._image_dir()
@@ -1236,12 +1159,10 @@ class AnnotationEditor(QMainWindow):
             self._all_samples = discover_samples(
                 img_dir, ann_dir, pred_dir,
                 require_prediction=True)
-        else:  # MODE_CREATE_GT
+        else:
             self._all_samples = discover_samples(img_dir, ann_dir)
 
         self._apply_filter()
-
-    # ── QC persistence ───────────────────────────────────────────────────
 
     def _qc_status_path(self) -> Optional[Path]:
         if self.data_dir:
@@ -1277,7 +1198,7 @@ class AnnotationEditor(QMainWindow):
         entry = self._qc_status.get(sample.uid, "to_be_qc")
         if isinstance(entry, dict):
             return entry.get("status", "to_be_qc")
-        return entry  # backward compat: bare string
+        return entry
 
     def _get_sample_qc_violations(self, sample: SampleRecord) -> list:
         entry = self._qc_status.get(sample.uid)
@@ -1295,7 +1216,7 @@ class AnnotationEditor(QMainWindow):
     def _mark_modified(self):
         """Mark current sample as modified and reset its QC status to TBD."""
         if self.modified:
-            return  # already marked
+            return
         self.modified = True
         if self.samples and 0 <= self.current_idx < len(self.samples):
             sample = self.samples[self.current_idx]
@@ -1335,7 +1256,7 @@ class AnnotationEditor(QMainWindow):
         self.qc_label.adjustSize()
         self.qc_label.show()
         self._position_qc_label()
-        # Update stats across currently displayed (filtered) samples
+
         n_passed = n_failed = n_pending = 0
         for s in self.samples:
             st = self._get_sample_qc_status(s)
@@ -1372,7 +1293,6 @@ class AnnotationEditor(QMainWindow):
             QMessageBox.information(self, "QC", "No polygons to check.")
             return
 
-        # Use canvas image dimensions if available, else 1024x1024
         if self.edit_canvas.base_image is not None:
             h, w = self.edit_canvas.base_image.shape[:2]
         else:
@@ -1411,7 +1331,7 @@ class AnnotationEditor(QMainWindow):
         sample = self.samples[self.current_idx]
         polys = self.edit_canvas.polygons
         if not polys:
-            # No polygons — clear QC status back to TBD
+
             self._qc_status.pop(sample.uid, None)
             self._save_qc_status()
             self._update_qc_label()
@@ -1454,15 +1374,14 @@ class AnnotationEditor(QMainWindow):
             progress.setValue(i)
             QApplication.processEvents()
 
-            # Load annotation polygons using actual image dimensions
             stem = self._file_stem(sample)
             ann_file = ann_dir / f"{stem}.txt" if ann_dir else sample.annotation_path
             if not ann_file or not ann_file.exists():
-                # No annotation = skip
+
                 continue
 
             try:
-                # Read image dimensions from first available TIF channel (metadata only)
+
                 h, w = 1024, 1024
                 for ch_name in ("DAPI", "FITC", "TRITC"):
                     ch_path = sample.image_dir / f"{sample.sample_name}_{ch_name}.tif"
@@ -1504,10 +1423,8 @@ class AnnotationEditor(QMainWindow):
         is_qc = (filter_type == "By QC")
         is_iou = (filter_type == "By IoU (low)")
 
-        # Show/hide IoU threshold spinbox
         self.iou_threshold_spin.setVisible(is_iou)
 
-        # Only repopulate the class combo when the filter TYPE changes
         if sender is self.filter_type_combo:
             self.filter_class_combo.blockSignals(True)
             self.filter_class_combo.clear()
@@ -1572,7 +1489,7 @@ class AnnotationEditor(QMainWindow):
             self._load_iou_cache()
 
         cache_key = sample.uid
-        # Check cache — keyed by uid, stores per-class IoU dict
+
         if cache_key in self._iou_cache:
             cached = self._iou_cache[cache_key]
             if class_filter == "mean":
@@ -1580,7 +1497,6 @@ class AnnotationEditor(QMainWindow):
             else:
                 return cached.get(str(class_filter))
 
-        # Compute fresh
         ann_path = sample.annotation_path
         pred_dir = self._prediction_dir()
         if not ann_path or not ann_path.exists() or not pred_dir:
@@ -1613,7 +1529,6 @@ class AnnotationEditor(QMainWindow):
 
             per_class["mean"] = round(float(np.mean(list(per_class.values()))), 4)
 
-            # Cache it
             self._iou_cache[cache_key] = per_class
             return per_class.get("mean" if class_filter == "mean" else str(class_filter))
         except Exception:
@@ -1651,7 +1566,7 @@ class AnnotationEditor(QMainWindow):
                     self.update_status(f"Computing IoU: {i + 1}/{n_total}...")
                     QApplication.processEvents()
             self._save_iou_cache()
-            scored.sort(key=lambda x: x[0])  # worst first
+            scored.sort(key=lambda x: x[0])
             self.samples = [s for _, s in scored]
             self.update_status(f"Found {len(self.samples)} samples with IoU < {threshold:.2f} (sorted worst-first)")
         else:
@@ -1685,7 +1600,7 @@ class AnnotationEditor(QMainWindow):
             self.load_sample(0)
             self.update_status(f"{len(self.samples)} images")
         else:
-            # Clear canvases and raw image
+
             self._raw_image = None
             for c in self._all_canvases():
                 c.base_image = None
@@ -1735,17 +1650,13 @@ class AnnotationEditor(QMainWindow):
             canvases.append(self.ref_canvas)
         return canvases
 
-    # ── UI setup ──────────────────────────────────────────────────────────
-
     def setup_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
 
-        # ── Row 1: Data + Navigation + Settings gear ────────────────────
         row1 = QHBoxLayout()
 
-        # Data folder (QGroupBox)
         data_group = QGroupBox("Data")
         data_layout = QHBoxLayout(data_group)
         data_layout.setContentsMargins(4, 2, 4, 2)
@@ -1761,7 +1672,6 @@ class AnnotationEditor(QMainWindow):
         data_layout.addWidget(self.browse_btn)
         row1.addWidget(data_group)
 
-        # Navigation (filter + sample selector)
         nav_group = QGroupBox("Navigation")
         nav_layout = QHBoxLayout(nav_group)
         nav_layout.setContentsMargins(4, 2, 4, 2)
@@ -1779,7 +1689,7 @@ class AnnotationEditor(QMainWindow):
         self.filter_class_combo.setEnabled(False)
         self.filter_class_combo.currentIndexChanged.connect(self._on_filter_changed)
         nav_layout.addWidget(self.filter_class_combo)
-        # IoU threshold spinbox (visible only for "By IoU (low)" filter)
+
         self.iou_threshold_spin = QDoubleSpinBox()
         self.iou_threshold_spin.setRange(0.0, 1.0)
         self.iou_threshold_spin.setSingleStep(0.05)
@@ -1801,7 +1711,6 @@ class AnnotationEditor(QMainWindow):
 
         row1.addStretch()
 
-        # Settings gear button (right side) — editor mode selector
         self.mode_label = QLabel(self.editor_mode)
         self.mode_label.setStyleSheet("color: #aaaaaa; font-style: italic;")
         row1.addWidget(self.mode_label)
@@ -1827,7 +1736,6 @@ class AnnotationEditor(QMainWindow):
         self.settings_btn.setMenu(settings_menu)
         row1.addWidget(self.settings_btn)
 
-        # Info button — quick reference guide
         self.info_btn = QToolButton()
         self.info_btn.setIcon(
             self.style().standardIcon(QStyle.SP_MessageBoxInformation))
@@ -1839,16 +1747,13 @@ class AnnotationEditor(QMainWindow):
         self.info_btn.clicked.connect(self._show_info_guide)
         row1.addWidget(self.info_btn)
 
-        # Instant tooltips for settings and info buttons
         self.settings_btn.installEventFilter(self)
         self.info_btn.installEventFilter(self)
 
         main_layout.addLayout(row1)
 
-        # ── Row 2: Actions + QC ──────────────────────────────────────────
         controls = QHBoxLayout()
 
-        # Class radio buttons (created here, added to modal page below)
         self.class_buttons = QButtonGroup(self)
         self._class_radios = []
         for cid, cname in CLASS_DISPLAY_NAMES.items():
@@ -1861,19 +1766,16 @@ class AnnotationEditor(QMainWindow):
         self.class_buttons.buttonToggled.connect(self._update_class_radio_styles)
         self._update_class_radio_styles()
 
-        # Action buttons — stacked: page 0 = main, page 1 = modal
         action_group = QGroupBox("Actions")
         action_outer = QHBoxLayout(action_group)
         action_outer.setContentsMargins(4, 2, 4, 2)
         self.action_stack = QStackedWidget()
         action_outer.addWidget(self.action_stack)
 
-        # Page 0: main actions
         main_page = QWidget()
         main_layout_inner = QHBoxLayout(main_page)
         main_layout_inner.setContentsMargins(0, 0, 0, 0)
 
-        # Tool mode radio: Node vs Brush
         main_layout_inner.addWidget(QLabel("Mode:"))
         self.tool_mode_group = QButtonGroup(self)
         self.node_radio = QRadioButton("Node")
@@ -1903,14 +1805,13 @@ class AnnotationEditor(QMainWindow):
         main_layout_inner.addWidget(self.copy_sel_btn)
         self.action_stack.addWidget(main_page)
 
-        # Page 1: modal cancel/confirm + class radio buttons
         modal_page = QWidget()
         modal_layout = QHBoxLayout(modal_page)
         modal_layout.setContentsMargins(0, 0, 0, 0)
         self.modal_label = QLabel("")
         self.modal_label.setStyleSheet("font-weight: bold; color: #ffaa00;")
         modal_layout.addWidget(self.modal_label)
-        # Class radio buttons (shown in modal for drawing/brush)
+
         for rb in self._class_radios:
             modal_layout.addWidget(rb)
         self.modal_undo_btn = QPushButton("Undo (Ctrl+Z)")
@@ -1927,7 +1828,6 @@ class AnnotationEditor(QMainWindow):
         modal_layout.addWidget(self.modal_confirm_btn)
         self.action_stack.addWidget(modal_page)
 
-        # QC section
         qc_group = QGroupBox("Quality Check")
         qc_layout = QHBoxLayout(qc_group)
         qc_layout.setContentsMargins(4, 2, 4, 2)
@@ -1954,7 +1854,6 @@ class AnnotationEditor(QMainWindow):
         controls.addStretch()
         main_layout.addLayout(controls)
 
-        # ── Image panels ─────────────────────────────────────────────────
         self.prev_btn = QPushButton("<")
         self.prev_btn.setFixedWidth(24)
         self.prev_btn.setMinimumHeight(120)
@@ -1987,7 +1886,6 @@ class AnnotationEditor(QMainWindow):
         panel_row.addWidget(self.next_btn)
         main_layout.addWidget(panel_widget, stretch=1)
 
-        # QC status overlay — top-right corner of image panel
         self.qc_label = QLabel("", panel_widget)
         self.qc_label.setStyleSheet(
             "background-color: rgba(0, 0, 0, 160); padding: 4px 10px;"
@@ -1998,16 +1896,14 @@ class AnnotationEditor(QMainWindow):
         self.qc_label.raise_()
         self._panel_widget = panel_widget
 
-        # Status bar: [status msg] ... Visibility ... | Brightness | Gamma | Reset | Home
         self.status_bar = QStatusBar()
 
-        # Visibility checkboxes with short labels
         vis_label = QLabel("Visibility:")
         self.status_bar.addPermanentWidget(vis_label)
         self.vis_checks = {}
         for cid, cname in CLASS_DISPLAY_NAMES.items():
             color = CLASS_COLORS_RGB.get(cid, (128, 128, 128))
-            # Desaturate: blend 55% color + 45% gray for softer labels
+
             r = int(color[0] * 0.55 + 160 * 0.45)
             g = int(color[1] * 0.55 + 160 * 0.45)
             b = int(color[2] * 0.55 + 160 * 0.45)
@@ -2019,13 +1915,11 @@ class AnnotationEditor(QMainWindow):
             self.status_bar.addPermanentWidget(cb)
             self.vis_checks[cid] = cb
 
-        # Separator
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
         sep.setFixedWidth(2)
         self.status_bar.addPermanentWidget(sep)
 
-        # Brightness slider (compact)
         self.status_bar.addPermanentWidget(QLabel("Brightness:"))
         self.brightness_slider = QSlider(Qt.Horizontal)
         self.brightness_slider.setRange(-100, 100)
@@ -2038,7 +1932,6 @@ class AnnotationEditor(QMainWindow):
         self.brightness_label.setFixedWidth(25)
         self.status_bar.addPermanentWidget(self.brightness_label)
 
-        # Gamma slider (compact)
         self.status_bar.addPermanentWidget(QLabel(" γ:"))
         self.gamma_slider = QSlider(Qt.Horizontal)
         self.gamma_slider.setRange(10, 300)
@@ -2051,11 +1944,10 @@ class AnnotationEditor(QMainWindow):
         self.gamma_label.setFixedWidth(25)
         self.status_bar.addPermanentWidget(self.gamma_label)
 
-        # Polygon opacity slider
         self.status_bar.addPermanentWidget(QLabel(" Opacity:"))
         self.opacity_slider = QSlider(Qt.Horizontal)
         self.opacity_slider.setRange(0, 100)
-        self.opacity_slider.setValue(24)  # 60/255 ≈ 24%
+        self.opacity_slider.setValue(24)
         self.opacity_slider.setFixedWidth(80)
         self.opacity_slider.setToolTip("Adjust polygon fill opacity (for display)")
         self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
@@ -2064,7 +1956,6 @@ class AnnotationEditor(QMainWindow):
         self.opacity_label.setFixedWidth(30)
         self.status_bar.addPermanentWidget(self.opacity_label)
 
-        # Reset button for sliders
         reset_display_btn = QPushButton("Reset")
         reset_display_btn.setFixedWidth(50)
         reset_display_btn.setToolTip("Reset brightness, gamma, and opacity to defaults")
@@ -2084,11 +1975,9 @@ class AnnotationEditor(QMainWindow):
         self.setStatusBar(self.status_bar)
         self.update_status("Select a data folder and mode to begin.")
 
-        # Alias for backward compat (internal references use gt_canvas)
         self.gt_canvas = self.edit_canvas
         self.pred_canvas = self.ref_canvas
 
-        # Apply initial mode layout
         self._apply_mode_layout()
 
     def _apply_mode_layout(self):
@@ -2109,18 +1998,16 @@ class AnnotationEditor(QMainWindow):
             self.copy_pred_btn.setVisible(False)
             self.copy_sel_btn.setVisible(False)
             self.splitter.setSizes([1, 1])
-        else:  # MODE_CREATE_GT
+        else:
             self.edit_canvas.title = "Ground Truth (Editable)"
             self.ref_canvas.title = ""
             self.ref_canvas.setVisible(False)
             self.copy_pred_btn.setVisible(False)
             self.copy_sel_btn.setVisible(False)
             self.splitter.setSizes([1, 1])
-        # Refresh titles
+
         self.edit_canvas.update()
         self.ref_canvas.update()
-
-    # ── Display brightness / gamma (display only) ────────────────────────
 
     def _on_brightness_changed(self, value: int):
         self._brightness = value
@@ -2150,11 +2037,9 @@ class AnnotationEditor(QMainWindow):
             return
         img = self._raw_image.astype(np.float32)
 
-        # Brightness: shift pixel values
         if self._brightness != 0:
             img = img + self._brightness * 255.0 / 100.0
 
-        # Gamma correction: gamma < 1 brightens midtones, gamma > 1 darkens
         gamma = self._gamma / 100.0
         if gamma != 1.0:
             img = np.clip(img, 0, 255) / 255.0
@@ -2162,7 +2047,6 @@ class AnnotationEditor(QMainWindow):
 
         display_img = np.ascontiguousarray(np.clip(img, 0, 255).astype(np.uint8))
 
-        # Update all canvases with the same shared image
         for canvas in self._all_canvases():
             canvas._qimage = None
             canvas.base_image = display_img
@@ -2206,8 +2090,6 @@ class AnnotationEditor(QMainWindow):
         QShortcut(QKeySequence("Ctrl+S"), self, self.save_annotations)
         QShortcut(QKeySequence("Ctrl+Shift+Z"), self, self.redo)
 
-    # ── Sample loading ────────────────────────────────────────────────────
-
     def load_sample(self, idx: int):
         if self.modified:
             reply = QMessageBox.question(
@@ -2226,7 +2108,7 @@ class AnnotationEditor(QMainWindow):
         self.modified = False
         self._undo_stack.clear()
         self._redo_stack.clear()
-        # Exit any active modal mode
+
         if self.edit_canvas.brush_mode:
             self.edit_canvas.cancel_brush_mode()
         if self.edit_canvas.drawing_mode:
@@ -2236,7 +2118,6 @@ class AnnotationEditor(QMainWindow):
         self._exit_modal()
         sample = self.samples[idx]
 
-        # Release previous image data before loading new
         for canvas in self._all_canvases():
             canvas._qimage = None
             canvas.base_image = None
@@ -2246,15 +2127,12 @@ class AnnotationEditor(QMainWindow):
         gc.collect()
 
         img = load_sample_normalized(sample)
-        # Paper Fig 1c composite: DAPI→cyan, FITC→yellow, TRITC→red, additive.
-        # load_sample_normalized returns (R=TRITC, G=FITC, B=DAPI); remap to
-        # R=FITC+TRITC, G=DAPI+FITC, B=DAPI so DAPI shows as cyan and FITC as yellow.
+
         tritc, fitc, dapi = img[..., 0], img[..., 1], img[..., 2]
         comp = np.stack([fitc + tritc, dapi + fitc, dapi], axis=-1)
         img_uint8 = to_uint8(np.clip(comp, 0, 1))
         h, w = img.shape[:2]
 
-        # Store raw image for display adjustments (brightness/gamma)
         self._raw_image = img_uint8.copy()
         self._apply_display_adjustments()
         self.original_canvas.set_polygons([])
@@ -2264,7 +2142,6 @@ class AnnotationEditor(QMainWindow):
         stem = self._file_stem(sample)
         ann_file = ann_dir / f"{stem}.txt" if ann_dir else None
 
-        # Resolve prediction file: prefer .txt, fall back to .npz
         pred_file = None
         if pred_dir:
             txt_path = pred_dir / f"{stem}.txt"
@@ -2282,18 +2159,18 @@ class AnnotationEditor(QMainWindow):
             return parse_yolo_annotations(path, w, h)
 
         if self.editor_mode == MODE_CORRECT_GT:
-            # Edit: GT annotations, Reference: predictions only
+
             gt_polys = parse_yolo_annotations(ann_file, w, h) if ann_file and ann_file.exists() else []
             pred_polys = _load_predictions(pred_file, w, h)
             self.edit_canvas.set_polygons(gt_polys)
             self.ref_canvas.set_polygons(pred_polys)
         elif self.editor_mode == MODE_CORRECT_PRED:
-            # Edit: predictions (to be corrected), no reference
+
             pred_polys = _load_predictions(pred_file, w, h)
             self.edit_canvas.set_polygons(pred_polys)
             self.ref_canvas.set_polygons([])
-        else:  # MODE_CREATE_GT
-            # Edit: existing annotations if any, else empty
+        else:
+
             gt_polys = parse_yolo_annotations(ann_file, w, h) if ann_file and ann_file.exists() else []
             self.edit_canvas.set_polygons(gt_polys)
             self.ref_canvas.set_polygons([])
@@ -2304,7 +2181,7 @@ class AnnotationEditor(QMainWindow):
         self.sample_label.setText(f"{len(self.samples)} images")
         self._update_qc_label()
         self._schedule_auto_qc()
-        # Show IoU in status if in correct GT mode and cache available
+
         iou_str = ""
         if self.editor_mode == MODE_CORRECT_GT and hasattr(self, '_iou_cache') and sample.uid in self._iou_cache:
             cached = self._iou_cache[sample.uid]
@@ -2312,7 +2189,7 @@ class AnnotationEditor(QMainWindow):
             for cid, cname in CLASS_DISPLAY_NAMES.items():
                 v = cached.get(str(cid))
                 if v is not None and v < 0.95:
-                    short = cname.split()[0][:3]  # e.g. "Who", "Aer", "Out"
+                    short = cname.split()[0][:3]
                     parts.append(f"{short}={v:.3f}")
             iou_str = " | IoU: " + ", ".join(p for p in parts if p)
         self.update_status(f"Loaded: {self._display_name(sample)}{iou_str}")
@@ -2332,8 +2209,6 @@ class AnnotationEditor(QMainWindow):
             return
         if self.current_idx < len(self.samples) - 1:
             self.load_sample(self.current_idx + 1)
-
-    # ── Folder / mode callbacks ───────────────────────────────────────────
 
     def _browse_data_dir(self):
         current = self.data_dir_entry.text() or ""
@@ -2368,7 +2243,7 @@ class AnnotationEditor(QMainWindow):
             points.append(QPointF(cx + r * math.cos(angle),
                                   cy + r * math.sin(angle)))
         p.drawPolygon(QPolygonF(points))
-        # Cut out center hole
+
         p.setCompositionMode(QPainter.CompositionMode_Clear)
         p.drawEllipse(QPointF(cx, cy), r_center, r_center)
         p.end()
@@ -2376,7 +2251,7 @@ class AnnotationEditor(QMainWindow):
 
     def _show_info_guide(self):
         """Show a non-modal quick-reference guide dialog (singleton)."""
-        # If already open, just raise it
+
         if self._info_dialog is not None and self._info_dialog.isVisible():
             self._info_dialog.raise_()
             self._info_dialog.activateWindow()
@@ -2495,11 +2370,11 @@ class AnnotationEditor(QMainWindow):
     def _on_mode_changed(self, mode_text: str):
         if mode_text == self.editor_mode:
             return
-        # Validate before switching
+
         err = self._validate_dirs_for_mode(mode_text)
         if err:
             QMessageBox.warning(self, "Missing Directories", err)
-            # Revert the action group check to current mode
+
             for action in self._mode_action_group.actions():
                 if action.text() == self.editor_mode:
                     action.setChecked(True)
@@ -2508,8 +2383,6 @@ class AnnotationEditor(QMainWindow):
         self.mode_label.setText(mode_text)
         self._apply_mode_layout()
         self._reload_samples()
-
-    # ── Styling helpers ───────────────────────────────────────────────────
 
     def set_drawing_class(self, class_id: int):
         btn = self.class_buttons.button(class_id)
@@ -2528,13 +2401,13 @@ class AnnotationEditor(QMainWindow):
                     f"QRadioButton {{ color: rgb({color[0]},{color[1]},{color[2]}); font-weight: bold; }}")
             else:
                 btn.setStyleSheet("QRadioButton { color: rgb(180,180,180); font-weight: normal; }")
-        # Update polygon class if editing an existing polygon
+
         if self._editing_polygon_idx is not None:
             new_class = self.class_buttons.checkedId()
             idx = self._editing_polygon_idx
             if 0 <= idx < len(self.edit_canvas.polygons) and new_class >= 0:
                 self.edit_canvas.polygons[idx]["class_id"] = new_class
-                # Also update brush class if in brush mode
+
                 if self.edit_canvas.brush_mode:
                     self.edit_canvas._brush_class_id = new_class
                 self.edit_canvas.update()
@@ -2564,12 +2437,10 @@ class AnnotationEditor(QMainWindow):
                     canvas._selected_vertices.clear()
             canvas.update()
 
-    # ── Tool dispatchers (Node / Brush radio) ───────────────────────────
-
     def _on_draw(self):
         """Draw new polygon using the selected tool (Node or Brush)."""
         if self.brush_radio.isChecked():
-            # Brush draw: deselect so brush starts a new polygon
+
             self.edit_canvas.selected_idx = None
             self.toggle_brush()
         else:
@@ -2580,7 +2451,7 @@ class AnnotationEditor(QMainWindow):
         if self.edit_canvas.selected_idx is None:
             self.update_status("Select a polygon first to edit")
             return
-        # Set class radio to match the polygon being edited
+
         idx = self.edit_canvas.selected_idx
         poly = self.edit_canvas.polygons[idx]
         self._editing_polygon_idx = idx
@@ -2592,26 +2463,24 @@ class AnnotationEditor(QMainWindow):
         else:
             self.toggle_vertex_editing()
 
-    # ── Modal (draw/edit) ─────────────────────────────────────────────────
-
     def _enter_modal(self, label: str, hide_class_radios: bool = False, hide_undo: bool = False):
         self.modal_label.setText(label)
         for rb in self._class_radios:
             rb.setVisible(not hide_class_radios)
         self.modal_undo_btn.setVisible(not hide_undo)
         self.action_stack.setCurrentIndex(1)
-        # Disable navigation and controls during modal
+
         self._set_nav_controls_enabled(False)
 
     def _exit_modal(self):
         self.action_stack.setCurrentIndex(0)
         self._editing_polygon_idx = None
         self._deleting_mode = False
-        # Restore class radios and undo button visibility
+
         for rb in self._class_radios:
             rb.setVisible(True)
         self.modal_undo_btn.setVisible(True)
-        # Re-enable navigation and controls
+
         self._set_nav_controls_enabled(True)
 
     def _set_nav_controls_enabled(self, enabled: bool):
@@ -2621,7 +2490,7 @@ class AnnotationEditor(QMainWindow):
         self.sample_combo.setEnabled(enabled)
         self.filter_type_combo.setEnabled(enabled)
         if enabled:
-            # Respect filter state for class combo
+
             is_none = self.filter_type_combo.currentText() == "None"
             self.filter_class_combo.setEnabled(not is_none)
         else:
@@ -2654,7 +2523,7 @@ class AnnotationEditor(QMainWindow):
         if self.edit_canvas.selected_idx is None:
             self.update_status("Select a polygon first to edit")
             return
-        # Default to brush mode for editing
+
         self.toggle_brush()
 
     def toggle_vertex_editing(self):
@@ -2675,7 +2544,7 @@ class AnnotationEditor(QMainWindow):
         self._undo_depth_at_mode_entry = len(self._undo_stack)
         self.edit_canvas.editing_mode = True
         self._editing_polygon_idx = self.edit_canvas.selected_idx
-        # Sync class radio to polygon being edited
+
         poly = self.edit_canvas.polygons[self.edit_canvas.selected_idx]
         btn = self.class_buttons.button(poly["class_id"])
         if btn:
@@ -2688,7 +2557,7 @@ class AnnotationEditor(QMainWindow):
         if self.edit_canvas.brush_mode:
             self.modal_confirm()
             return
-        # Exit other modes
+
         if self.edit_canvas.drawing_mode:
             self.edit_canvas.cancel_drawing()
             self._exit_modal()
@@ -2700,7 +2569,7 @@ class AnnotationEditor(QMainWindow):
         canvas = self.edit_canvas
         if canvas.selected_idx is not None and 0 <= canvas.selected_idx < len(canvas.polygons):
             self._editing_polygon_idx = canvas.selected_idx
-            # Sync class radio to polygon being edited
+
             poly = canvas.polygons[canvas.selected_idx]
             btn = self.class_buttons.button(poly["class_id"])
             if btn:
@@ -2745,7 +2614,7 @@ class AnnotationEditor(QMainWindow):
     def modal_confirm(self):
         confirmed = False
         if self._deleting_mode:
-            # Perform the actual deletion
+
             removed = self.edit_canvas.delete_selected()
             depth = self._undo_depth_at_mode_entry
             del self._undo_stack[depth:]
@@ -2799,7 +2668,7 @@ class AnnotationEditor(QMainWindow):
                 self._undo_stack.append(self._mode_entry_snapshot)
             self._redo_stack.clear()
             if result is not None:
-                # Only override class for new polygons; keep original class when editing
+
                 if orig_idx is None:
                     result['class_id'] = self.class_buttons.checkedId()
                 if orig_idx is not None and 0 <= orig_idx < len(self.edit_canvas.polygons):
@@ -2830,7 +2699,6 @@ class AnnotationEditor(QMainWindow):
             self._mode_entry_snapshot = None
             self._exit_modal()
 
-        # Auto-save on confirm
         if confirmed:
             self.save_annotations()
             self._schedule_auto_qc()
@@ -2848,8 +2716,6 @@ class AnnotationEditor(QMainWindow):
         else:
             self.edit_canvas.selected_idx = None
             self.edit_canvas.update()
-
-    # ── Undo / redo ───────────────────────────────────────────────────────
 
     def push_undo(self):
         self._undo_stack.append(copy.deepcopy(self.edit_canvas.polygons))
@@ -2906,15 +2772,13 @@ class AnnotationEditor(QMainWindow):
         self._mark_modified()
         self.update_status("Redo")
 
-    # ── Delete ────────────────────────────────────────────────────────────
-
     def delete_selected(self):
         has_vertex_selection = (self.edit_canvas._selected_vertex is not None
                                 or len(self.edit_canvas._selected_vertices) > 0)
         if (self.edit_canvas.editing_mode and has_vertex_selection
                 and self.edit_canvas.selected_idx is not None):
             polygon = self.edit_canvas.polygons[self.edit_canvas.selected_idx]["polygon"]
-            # Count how many would be deleted
+
             to_delete = set(self.edit_canvas._selected_vertices)
             if self.edit_canvas._selected_vertex is not None:
                 to_delete.add(self.edit_canvas._selected_vertex)
@@ -2933,7 +2797,7 @@ class AnnotationEditor(QMainWindow):
                 n = len(self.edit_canvas.polygons[self.edit_canvas.selected_idx]['polygon'])
                 self.update_status(f"Deleted {len(to_delete)} vertex(es) ({n} remaining)")
             return
-        # Whole-polygon deletion: enter confirmation modal
+
         if self.edit_canvas.selected_idx is None:
             self.update_status("No polygon selected to delete")
             return
@@ -2946,14 +2810,11 @@ class AnnotationEditor(QMainWindow):
         self._enter_modal(f"Delete {class_name}?", hide_class_radios=True, hide_undo=True)
         self.update_status(f"Confirm delete of {class_name} polygon, or cancel to keep it.")
 
-    # ── Split Ring ────────────────────────────────────────────────────────
-
-    # Annotation class pairs for ring structures
     _RING_PAIRS = {
-        2: (2, 3),   # outer endo → outer endo (2) + inner endo (3)
-        3: (2, 3),   # inner endo → same pair
-        4: (4, 5),   # outer exo → outer exo (4) + inner exo (5)
-        5: (4, 5),   # inner exo → same pair
+        2: (2, 3),
+        3: (2, 3),
+        4: (4, 5),
+        5: (4, 5),
     }
 
     def split_ring(self):
@@ -2980,12 +2841,10 @@ class AnnotationEditor(QMainWindow):
         polygon = poly_data["polygon"]
         h, w = canvas.base_image.shape[:2]
 
-        # Convert polygon to filled mask
         mask = np.zeros((h, w), dtype=np.uint8)
         pts = polygon.reshape(-1, 1, 2).astype(np.int32)
         cv2.fillPoly(mask, [pts], 1)
 
-        # Extract ring contours (with morphological closing for gap repair)
         outer_poly, inner_poly = _extract_ring_contours(mask)
 
         if outer_poly is None:
@@ -2996,14 +2855,12 @@ class AnnotationEditor(QMainWindow):
                                "Try closing gaps first (edit mode)")
             return
 
-        # Determine class IDs for outer and inner
         if class_id in self._RING_PAIRS:
             outer_cls, inner_cls = self._RING_PAIRS[class_id]
         else:
             outer_cls = class_id
             inner_cls = class_id + 1
 
-        # Replace selected polygon with outer + inner
         self.push_undo()
         idx = canvas.selected_idx
         canvas.polygons.pop(idx)
@@ -3016,14 +2873,11 @@ class AnnotationEditor(QMainWindow):
             f"Split ring → outer (class {outer_cls}, {len(outer_poly)} pts) "
             f"+ inner (class {inner_cls}, {len(inner_poly)} pts)")
 
-    # ── Save ──────────────────────────────────────────────────────────────
-
     def save_annotations(self):
         if not self.samples:
             return
         sample = self.samples[self.current_idx]
 
-        # Get image dimensions from the canvas (already loaded)
         if self.edit_canvas.base_image is None:
             return
         h, w = self.edit_canvas.base_image.shape[:2]
@@ -3038,7 +2892,6 @@ class AnnotationEditor(QMainWindow):
                 coords.append(f"{pt[1] / h:.6f}")
             lines.append(f"{class_id} " + " ".join(coords))
 
-        # Determine save directory
         ann_dir = self._annotation_dir()
         stem = self._file_stem(sample)
         if ann_dir:
@@ -3052,18 +2905,14 @@ class AnnotationEditor(QMainWindow):
 
         self.modified = False
 
-        # Reset QC status since annotations changed
         if sample.uid in self._qc_status:
             del self._qc_status[sample.uid]
             self._save_qc_status()
             self._update_qc_label()
 
-        # Invalidate IoU cache for this sample since GT changed
         self._invalidate_iou_cache(sample.uid)
 
         self.update_status(f"Saved {len(lines)} polygons to {save_path.name}")
-
-    # ── Sync view ─────────────────────────────────────────────────────────
 
     def sync_view(self, source: PolygonCanvas):
         zoom = source.zoom_level
@@ -3071,8 +2920,6 @@ class AnnotationEditor(QMainWindow):
         for canvas in self._all_canvases():
             if canvas is not source:
                 canvas.set_view(zoom, pan)
-
-    # ── Copy from reference ───────────────────────────────────────────────
 
     def copy_selected_ref_to_edit(self):
         if not self.ref_canvas.isVisible():
@@ -3130,8 +2977,6 @@ class AnnotationEditor(QMainWindow):
             self._schedule_auto_qc()
             self.update_status(f"Copied {len(self.ref_canvas.polygons)} reference polygons — saved.")
 
-    # ── Misc ──────────────────────────────────────────────────────────────
-
     def home_view(self):
         """Reset zoom, pan, and panel sizes to equal."""
         for canvas in self._all_canvases():
@@ -3160,7 +3005,6 @@ class AnnotationEditor(QMainWindow):
                 event.ignore()
         else:
             event.accept()
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -3223,7 +3067,6 @@ Controls:
     editor.show()
 
     sys.exit(app.exec_())
-
 
 if __name__ == "__main__":
     main()

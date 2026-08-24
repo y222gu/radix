@@ -38,29 +38,16 @@ from src.model_classes import (
     BIO_7_NAMES, BIO_7_COLORS_RGB,
 )
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ⇩  EDIT THESE TWO PATHS, THEN `python predict.py`  ⇩
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Folder of per-sample subfolders; each must contain *_DAPI.tif, *_FITC.tif, *_TRITC.tif.
-# Two-level layouts (group/sample/*.tif) are also supported and produce sample IDs of
-# the form "{group}/{sample}".
 DATA_DIR = Path("/Users/yifeigu/Downloads/Kevin_SCZ_EXO1_test_mutants")
 
-# Either a run folder (e.g. .../2026-04-17_002/) containing checkpoints/best-*.ckpt,
-# or a direct path to a .ckpt file.
 MODEL_DIR = Path("/Users/yifeigu/Documents/Siobhan_Lab/plants/output/runs/timm/dpt_meta_facebook_dinov3-vits16-pretrain-lvd1689m_equalw_drop_shuf_dfcel_semantic7c_A/2026-04-22_001")
 
-# Set to None to default to <DATA_DIR>/predictions_dinov3_dpt/.
 OUTPUT_DIR = None
 
-# ═══════════════════════════════════════════════════════════════════════════════
-
 IMG_SIZE = 1024
-CHANNEL_NAMES = ["TRITC", "FITC", "DAPI"]   # RGB order as in src/preprocessing.py
+CHANNEL_NAMES = ["TRITC", "FITC", "DAPI"]
 MEASURED_REGIONS = ["Exodermis", "Endodermis", "Cortex", "Vascular"]
-CROP_MARGIN_PCT = 0.05   # 5% padding around detected root bbox
-
+CROP_MARGIN_PCT = 0.05
 
 def find_checkpoint(model_dir: Path) -> Path:
     """Accept either a .ckpt file or a run folder containing checkpoints/best-*.ckpt."""
@@ -70,27 +57,25 @@ def find_checkpoint(model_dir: Path) -> Path:
         ckpt_dir = model_dir / "checkpoints" if (model_dir / "checkpoints").is_dir() else model_dir
         candidates = sorted(ckpt_dir.glob("best-*.ckpt"))
         if candidates:
-            return candidates[-1]  # take the most recent "best-*" if multiple
-        # fall back to last.ckpt or any .ckpt
+            return candidates[-1]
+
         any_ckpts = sorted(ckpt_dir.glob("*.ckpt"))
         if any_ckpts:
             return any_ckpts[-1]
     raise FileNotFoundError(f"No checkpoint found under {model_dir}")
-
 
 def _find_channels_in(folder: Path):
     """Look for one TIF per channel inside a single folder. Returns {ch: path} (possibly partial)."""
     all_tifs = list(folder.glob("*.tif")) + list(folder.glob("*.tiff"))
     channels = {}
     for ch in CHANNEL_NAMES:
-        # Match DAPI/FITC/TRITC as a token, not a substring of another word
+
         tokens = (f"_{ch}.", f"_{ch}_", f"({ch})", f"-{ch}-", f"-{ch}.")
         for f in all_tifs:
             if any(tok in f.name for tok in tokens):
                 channels[ch] = f
                 break
     return channels
-
 
 def discover_samples(data_dir: Path):
     """Return list of (sample_id, {channel: tif_path}).
@@ -109,7 +94,7 @@ def discover_samples(data_dir: Path):
         if len(channels) == 3:
             samples.append((sub.name, channels))
             continue
-        # No TIFs at this level — recurse one deeper (group/sample layout).
+
         for sub2 in sorted(sub.iterdir()):
             if not sub2.is_dir() or sub2.name.startswith("."):
                 continue
@@ -121,7 +106,6 @@ def discover_samples(data_dir: Path):
                 print(f"  [skip] {sub.name}/{sub2.name}: missing channels {missing}")
     return samples
 
-
 def load_channel(path: Path) -> np.ndarray:
     """Load a single-channel TIF as (H, W) float32."""
     img = tifffile.imread(str(path))
@@ -129,12 +113,10 @@ def load_channel(path: Path) -> np.ndarray:
         img = img[..., 0]
     return img.astype(np.float32)
 
-
 def load_sample_3ch(channels: dict):
     """Load 3 TIFs into (H, W, 3) float32 in R=TRITC, G=FITC, B=DAPI order."""
     stacks = [load_channel(channels[ch]) for ch in CHANNEL_NAMES]
     return np.stack(stacks, axis=-1)
-
 
 def normalize_percentile(img: np.ndarray, p_low=1.0, p_high=99.5):
     out = np.empty_like(img, dtype=np.float32)
@@ -147,10 +129,8 @@ def normalize_percentile(img: np.ndarray, p_low=1.0, p_high=99.5):
             out[..., c] = 0.0
     return out
 
-
 def to_uint8(img01: np.ndarray) -> np.ndarray:
     return (np.clip(img01, 0, 1) * 255).astype(np.uint8)
-
 
 def run_inference(model, device, img_norm: np.ndarray) -> np.ndarray:
     """img_norm: (H, W, 3) float32 [0,1] at full resolution. Returns (H, W) uint8 semantic mask."""
@@ -161,7 +141,6 @@ def run_inference(model, device, img_norm: np.ndarray) -> np.ndarray:
         logits = model(x)
         pred = logits.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
     return cv2.resize(pred, (w, h), interpolation=cv2.INTER_NEAREST)
-
 
 def find_root_bbox(sem_mask: np.ndarray, margin_pct: float = CROP_MARGIN_PCT):
     """Bounding box of all foreground (class >= 1) in a semantic mask + margin.
@@ -180,7 +159,6 @@ def find_root_bbox(sem_mask: np.ndarray, margin_pct: float = CROP_MARGIN_PCT):
     x0 = max(0, x0 - mx); x1 = min(W, x1 + mx)
     return y0, y1, x0, x1
 
-
 def overlay_bio7(rgb_uint8, bio7_dict, alpha=0.5):
     result = rgb_uint8.astype(np.float32)
     for cls_id, name in enumerate(BIO_7_NAMES):
@@ -193,7 +171,6 @@ def overlay_bio7(rgb_uint8, bio7_dict, alpha=0.5):
         color = np.array(BIO_7_COLORS_RGB[cls_id], dtype=np.float32)
         result[mask] = (1 - alpha) * result[mask] + alpha * color
     return np.clip(result, 0, 255).astype(np.uint8)
-
 
 def save_vis(rgb_u8, bio7, sample_name, out_path):
     """Input + per-region overlays + combined overlay in a 2×4 grid (matches predict_online_*)."""
@@ -214,7 +191,7 @@ def save_vis(rgb_u8, bio7, sample_name, out_path):
         ax.imshow(overlay.clip(0, 255).astype(np.uint8))
         ax.set_title(f"{name} ({frac:.1f}%)")
         ax.axis("off")
-    # last panel: combined
+
     ax = axes[1, 3]
     ax.imshow(overlay_bio7(rgb_u8, bio7))
     ax.set_title("All classes")
@@ -224,7 +201,6 @@ def save_vis(rgb_u8, bio7, sample_name, out_path):
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-
 
 def measure(sample_name: str, raw_img: np.ndarray, bio7: dict) -> dict:
     """Compute aerenchyma ratio + per-region per-channel mean intensity on raw image."""
@@ -238,7 +214,7 @@ def measure(sample_name: str, raw_img: np.ndarray, bio7: dict) -> dict:
     aer_ratio = float(aer.sum()) / max(int(wr.sum()), 1)
 
     row = {"sample_id": sample_name, "aerenchyma_ratio": aer_ratio}
-    # raw_img channels: 0=TRITC, 1=FITC, 2=DAPI (matches load_sample_3ch)
+
     ch_idx = {"TRITC": 0, "FITC": 1, "DAPI": 2}
     for region in MEASURED_REGIONS:
         mask = bio7[region] > 0
@@ -246,7 +222,6 @@ def measure(sample_name: str, raw_img: np.ndarray, bio7: dict) -> dict:
             val = float(raw_img[..., ch_idx[ch]][mask].mean()) if mask.any() else 0.0
             row[f"{region.lower()}_{ch}"] = val
     return row
-
 
 def main():
     data_dir = DATA_DIR.resolve()
@@ -272,10 +247,9 @@ def main():
     rows = []
     for sample_name, channels in samples:
         print(f"-- {sample_name}")
-        raw = load_sample_3ch(channels)          # (H, W, 3) float32 raw
-        norm = normalize_percentile(raw)         # (H, W, 3) float32 [0,1]
+        raw = load_sample_3ch(channels)
+        norm = normalize_percentile(raw)
 
-        # Stage 1: coarse localization on the full image to find root bbox.
         sem_coarse = run_inference(model, device, norm)
         bbox = find_root_bbox(sem_coarse, margin_pct=CROP_MARGIN_PCT)
 
@@ -286,13 +260,12 @@ def main():
         else:
             y0, y1, x0, x1 = bbox
             raw_crop = raw[y0:y1, x0:x1]
-            # Re-normalize on the cropped region so percentiles reflect only tissue pixels.
+
             norm_crop = normalize_percentile(raw_crop)
             print(f"  root bbox: y=[{y0}:{y1}] x=[{x0}:{x1}]  "
                   f"crop {raw_crop.shape[0]}x{raw_crop.shape[1]} "
                   f"(full {raw.shape[0]}x{raw.shape[1]})")
 
-        # Stage 2: final inference on the cropped region (resized to 1024 inside run_inference).
         sem = run_inference(model, device, norm_crop)
         bio7 = unet_semantic_to_bio7(sem, *sem.shape)
 
@@ -304,7 +277,6 @@ def main():
         save_vis(to_uint8(norm_crop), bio7, sample_name, vis_path)
         rows.append(measure(sample_name, raw_crop, bio7))
 
-    # Write one CSV with all samples
     cols = ["sample_id", "aerenchyma_ratio"]
     for region in MEASURED_REGIONS:
         for ch in ("DAPI", "FITC", "TRITC"):
@@ -320,7 +292,6 @@ def main():
     print(f"  predictions: {out_dir/'predictions'}")
     print(f"  visualizations: {out_dir/'vis'}")
     print(f"  measurements: {csv_path}")
-
 
 if __name__ == "__main__":
     main()

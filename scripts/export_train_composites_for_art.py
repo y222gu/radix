@@ -12,20 +12,18 @@ from PIL import Image
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
 
-from src.preprocessing import load_channel, normalize_percentile  # noqa: E402
+from src.preprocessing import load_channel, normalize_percentile
 
 TRAIN_IMG_ROOT = PROJECT / "data" / "train" / "image"
 OUT_DIR = Path("/Users/yifeigu/Documents/Siobhan_Lab/science_art/to be selected")
 
-
 def make_composite(dapi: np.ndarray, fitc: np.ndarray, tritc: np.ndarray) -> np.ndarray:
     h, w = dapi.shape
     comp = np.zeros((h, w, 3), dtype=np.float32)
-    comp[..., 1] += dapi; comp[..., 2] += dapi   # DAPI  → cyan
-    comp[..., 0] += fitc; comp[..., 1] += fitc   # FITC  → yellow
-    comp[..., 0] += tritc                        # TRITC → red
+    comp[..., 1] += dapi; comp[..., 2] += dapi
+    comp[..., 0] += fitc; comp[..., 1] += fitc
+    comp[..., 0] += tritc
     return np.clip(comp, 0, 1)
-
 
 def iter_samples():
     for species_dir in sorted(p for p in TRAIN_IMG_ROOT.iterdir() if p.is_dir()):
@@ -33,7 +31,6 @@ def iter_samples():
             for exp_dir in sorted(p for p in scope_dir.iterdir() if p.is_dir()):
                 for sample_dir in sorted(p for p in exp_dir.iterdir() if p.is_dir()):
                     yield species_dir.name, scope_dir.name, exp_dir.name, sample_dir
-
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -64,7 +61,6 @@ def main():
         if i % 50 == 0 or i == total:
             print(f"  {i}/{total}  done={n_done} skipped={n_skip} failed={n_fail}")
     print(f"\nFinished. Wrote {n_done}, skipped {n_skip}, failed {n_fail}.")
-
 
 if __name__ == "__main__":
     main()

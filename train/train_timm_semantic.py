@@ -22,7 +22,6 @@ import argparse, os, csv, sys
 from pathlib import Path
 from datetime import datetime
 
-# Add project root to path (for running as `python train/train_timm_semantic.py`)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2
@@ -44,7 +43,6 @@ import segmentation_models_pytorch as smp
 NUM_CLASSES = 7
 DEFAULT_LR = 1e-4
 
-
 def _tokens_to_bchw(feat):
     """Convert (B, N, C), (B, H, W, C), or (B, C, H, W) to (B, C, H, W).
 
@@ -59,15 +57,10 @@ def _tokens_to_bchw(feat):
         return feat.reshape(B, h, w, C).permute(0, 3, 1, 2).contiguous()
     if feat.dim() == 4:
         _, d1, d2, d3 = feat.shape
-        # channels-last iff last dim > middle dims (assuming square spatial)
+
         if d3 > d1 and d3 > d2:
             return feat.permute(0, 3, 1, 2).contiguous()
     return feat
-
-
-# ══════════════════════════════════════════════════════════════════════
-# HuggingFace DINOv3 backbone wrapper (timm-compatible API)
-# ══════════════════════════════════════════════════════════════════════
 
 class HFViTBackbone(nn.Module):
     """Wrap a HuggingFace ViT-style model to expose a timm-like
@@ -87,13 +80,13 @@ class HFViTBackbone(nn.Module):
         cfg = self.model.config
         self.embed_dim = cfg.hidden_size
         self.num_blocks = cfg.num_hidden_layers
-        # Number of prefix tokens (CLS + register tokens)
+
         self.num_register = getattr(cfg, "num_register_tokens", 0)
-        self.num_prefix = 1 + self.num_register  # CLS + registers
-        # patch size
+        self.num_prefix = 1 + self.num_register
+
         ps = getattr(cfg, "patch_size", 16)
         self.patch_size = (ps, ps) if isinstance(ps, int) else tuple(ps)
-        # Fake `blocks` and `patch_embed.patch_size` for code that reads them
+
         self.blocks = self.model.encoder.layer if hasattr(self.model, "encoder") else []
 
     def forward_intermediates(self, x, indices, return_prefix_tokens=False,
@@ -106,13 +99,13 @@ class HFViTBackbone(nn.Module):
         projection only uses CLS in Meta's implementation).
         """
         out = self.model(pixel_values=x, output_hidden_states=True)
-        hidden = out.hidden_states  # tuple, length = num_blocks + 1
+        hidden = out.hidden_states
         feats = []
         for i in indices:
-            h = hidden[i + 1]  # after block i (0-indexed)
+            h = hidden[i + 1]
             if h.shape[1] > self.num_prefix:
                 patch = h[:, self.num_prefix:, :]
-                cls = h[:, :1, :]  # CLS is always first prefix token
+                cls = h[:, :1, :]
             else:
                 patch = h
                 cls = None
@@ -125,11 +118,6 @@ class HFViTBackbone(nn.Module):
     @property
     def parameters_module(self):
         return self.model
-
-
-# ══════════════════════════════════════════════════════════════════════
-# Decoders
-# ══════════════════════════════════════════════════════════════════════
 
 class DPTDecoder(nn.Module):
     """Simplified DPT-style decoder for plain ViT encoders.
@@ -150,7 +138,6 @@ class DPTDecoder(nn.Module):
         self.feature_indices = feature_indices
         n_features = len(feature_indices)
 
-        # Project each ViT layer output to common channel dim
         self.projects = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(embed_dim, out_channels, 1),
@@ -159,7 +146,6 @@ class DPTDecoder(nn.Module):
             ) for _ in range(n_features)
         ])
 
-        # Progressive fusion: bottom-up, each level fuses with the one below
         self.fusions = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(out_channels, out_channels, 3, padding=1),
@@ -171,7 +157,6 @@ class DPTDecoder(nn.Module):
             ) for _ in range(n_features - 1)
         ])
 
-        # Final upsample to full resolution
         self.up = nn.Sequential(
             nn.Conv2d(out_channels, out_channels, 3, padding=1),
             nn.BatchNorm2d(out_channels),
@@ -197,17 +182,14 @@ class DPTDecoder(nn.Module):
         projected = [self.projects[i](_tokens_to_bchw(f))
                      for i, f in enumerate(features)]
 
-        # Progressive fusion (bottom-up: deepest first)
         x = projected[-1]
         for i in range(len(self.fusions) - 1, -1, -1):
             x = F.interpolate(x, size=projected[i].shape[2:], mode='bilinear', align_corners=False)
             x = x + projected[i]
             x = self.fusions[i](x)
 
-        # Upsample to near-full resolution
         x = self.up(x)
         return x
-
 
 class MSLinearDecoder(nn.Module):
     """Meta DINOv2 official +ms linear head.
@@ -224,7 +206,7 @@ class MSLinearDecoder(nn.Module):
         n = len(feature_indices)
         self.total_dim = embed_dim * n
         self.bn = nn.BatchNorm2d(self.total_dim)
-        # Output channels for the wrapper's 1x1 head to consume
+
         self.out_channels = self.total_dim
 
     def forward(self, features):
@@ -232,7 +214,6 @@ class MSLinearDecoder(nn.Module):
         x = torch.cat(feats, dim=1)
         x = self.bn(x)
         return x
-
 
 class SegDINOMLPDecoder(nn.Module):
     """SegDINO-style lightweight MLP decoder.
@@ -267,7 +248,6 @@ class SegDINOMLPDecoder(nn.Module):
         x = self.mlp(x)
         return x
 
-
 class ResidualConvUnit(nn.Module):
     """Residual convolutional unit used inside DPT's FeatureFusionBlock.
 
@@ -291,7 +271,6 @@ class ResidualConvUnit(nn.Module):
         y = self.conv2(y)
         y = self.bn2(y)
         return x + y
-
 
 class FeatureFusionBlock(nn.Module):
     """DPT fusion block: (optional skip) + residual conv → 2× upsample.
@@ -317,7 +296,6 @@ class FeatureFusionBlock(nn.Module):
         x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
         return x
 
-
 class ResidualConvUnitMeta(nn.Module):
     """Meta DINOv2 DPT residual conv unit: pre-activation, ReLU, bias=False.
 
@@ -341,7 +319,6 @@ class ResidualConvUnitMeta(nn.Module):
         y = self.bn2(y)
         return x + y
 
-
 class FeatureFusionBlockMeta(nn.Module):
     """Meta DINOv2 DPT FeatureFusionBlock (uses ReLU, bias-free ResConvUnits)."""
 
@@ -361,7 +338,6 @@ class FeatureFusionBlockMeta(nn.Module):
         x = self.res_out(x)
         x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
         return x
-
 
 class DPTDecoderMeta(nn.Module):
     """Meta DINOv2-exact DPT decoder (Reassemble with pyramid channels).
@@ -395,29 +371,23 @@ class DPTDecoderMeta(nn.Module):
         self.embed_dim = embed_dim
         ppc = list(post_process_channels)
 
-        # CLS readout projections (Meta DINOv2 default: 2C → C via Linear + GELU).
-        # Only constructed when readout_type == "project".
         if readout_type == "project":
             self.readout_projects = nn.ModuleList([
                 nn.Sequential(nn.Linear(2 * embed_dim, embed_dim), nn.GELU())
                 for _ in range(4)
             ])
 
-        # Reassemble step 1: per-tap 1×1 projection from embed_dim to ppc[i]
         self.reassemble_projects = nn.ModuleList([
             nn.Conv2d(embed_dim, ppc[i], kernel_size=1) for i in range(4)
         ])
 
-        # Reassemble step 2: per-tap spatial resample (shallowest → deepest)
         self.resize_layers = nn.ModuleList([
-            nn.ConvTranspose2d(ppc[0], ppc[0], kernel_size=4, stride=4, padding=0),  # 4×UP
-            nn.ConvTranspose2d(ppc[1], ppc[1], kernel_size=2, stride=2, padding=0),  # 2×UP
-            nn.Identity(),                                                             # keep
-            nn.Conv2d(ppc[3], ppc[3], kernel_size=3, stride=2, padding=1),            # 2×DOWN
+            nn.ConvTranspose2d(ppc[0], ppc[0], kernel_size=4, stride=4, padding=0),
+            nn.ConvTranspose2d(ppc[1], ppc[1], kernel_size=2, stride=2, padding=0),
+            nn.Identity(),
+            nn.Conv2d(ppc[3], ppc[3], kernel_size=3, stride=2, padding=1),
         ])
 
-        # Post-process: per-tap 3×3 conv to unify channels → `channels` (256).
-        # bias=False because BatchNorm follows in the fusion path.
         self.post_process = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(ppc[i], channels, kernel_size=3, padding=1, bias=False),
@@ -425,10 +395,8 @@ class DPTDecoderMeta(nn.Module):
             ) for i in range(4)
         ])
 
-        # Fusion blocks (all at `channels`)
         self.fusions = nn.ModuleList([FeatureFusionBlockMeta(channels) for _ in range(4)])
 
-        # Output head mirroring Meta's HeadDepth (minus the final 1×1 for depth)
         self.out_conv = nn.Sequential(
             nn.Conv2d(channels, channels // 2, 3, padding=1, bias=False),
             nn.BatchNorm2d(channels // 2),
@@ -437,7 +405,7 @@ class DPTDecoderMeta(nn.Module):
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
         )
-        self.out_channels = 32   # wrapping model's Conv1×1 head consumes 32 → num_classes
+        self.out_channels = 32
 
     def forward(self, features):
         """`features` is either:
@@ -449,31 +417,30 @@ class DPTDecoderMeta(nn.Module):
         for i, f in enumerate(features):
             if self.readout_type == "project":
                 patch, cls = f
-                # Bring patch to (B, N, C) for Linear projection with CLS
+
                 if patch.dim() == 4:
                     B, C, H, W = patch.shape
                     patch_bnc = patch.permute(0, 2, 3, 1).reshape(B, H * W, C)
                 else:
-                    patch_bnc = patch  # (B, N, C)
-                # Tile CLS to every patch position then concat along channel
-                cls_tiled = cls.expand(-1, patch_bnc.shape[1], -1)              # (B, N, C)
-                merged = torch.cat([patch_bnc, cls_tiled], dim=-1)              # (B, N, 2C)
-                proj = self.readout_projects[i](merged)                         # (B, N, C)
+                    patch_bnc = patch
+
+                cls_tiled = cls.expand(-1, patch_bnc.shape[1], -1)
+                merged = torch.cat([patch_bnc, cls_tiled], dim=-1)
+                proj = self.readout_projects[i](merged)
                 feats.append(_tokens_to_bchw(proj))
             else:
                 feats.append(_tokens_to_bchw(f))
-        # Reassemble: project + resize
-        r = [self.resize_layers[i](self.reassemble_projects[i](feats[i])) for i in range(4)]
-        # Post-process to unified 256 channels
-        p = [self.post_process[i](r[i]) for i in range(4)]
-        # Progressive fusion from deepest to shallowest
-        x = self.fusions[3](p[3])              # 37×37  → 74×74
-        x = self.fusions[2](p[2], x)           # + 74×74 skip,  → 148×148
-        x = self.fusions[1](p[1], x)           # + 148×148 skip, → 296×296
-        x = self.fusions[0](p[0], x)           # + 296×296 skip, → 592×592
-        x = self.out_conv(x)                   # 256 → 128 → 32
-        return x
 
+        r = [self.resize_layers[i](self.reassemble_projects[i](feats[i])) for i in range(4)]
+
+        p = [self.post_process[i](r[i]) for i in range(4)]
+
+        x = self.fusions[3](p[3])
+        x = self.fusions[2](p[2], x)
+        x = self.fusions[1](p[1], x)
+        x = self.fusions[0](p[0], x)
+        x = self.out_conv(x)
+        return x
 
 class DPTDecoderFull(nn.Module):
     """Full DPT decoder with Reassemble multi-resolution pyramid.
@@ -500,48 +467,38 @@ class DPTDecoderFull(nn.Module):
         self.feature_indices = feature_indices
         c = out_channels
 
-        # 1×1 projection to common channels (per tap)
         self.projects = nn.ModuleList([
             nn.Conv2d(embed_dim, c, kernel_size=1) for _ in range(4)
         ])
 
-        # Reassemble: different spatial op per tap (shallowest first)
         self.resize_layers = nn.ModuleList([
-            nn.ConvTranspose2d(c, c, kernel_size=4, stride=4, padding=0),  # tap 0: 4× UP
-            nn.ConvTranspose2d(c, c, kernel_size=2, stride=2, padding=0),  # tap 1: 2× UP
-            nn.Identity(),                                                   # tap 2: keep
-            nn.Conv2d(c, c, kernel_size=3, stride=2, padding=1),             # tap 3: 2× DOWN
+            nn.ConvTranspose2d(c, c, kernel_size=4, stride=4, padding=0),
+            nn.ConvTranspose2d(c, c, kernel_size=2, stride=2, padding=0),
+            nn.Identity(),
+            nn.Conv2d(c, c, kernel_size=3, stride=2, padding=1),
         ])
 
-        # 4 fusion blocks; fusions[3] (deepest) has no skip
         self.fusions = nn.ModuleList([FeatureFusionBlock(c) for _ in range(4)])
 
-        # Shallow output head: refine then halve channels for compatibility
-        # with the Conv1×1 classifier added by the wrapping model.
         self.out_conv = nn.Sequential(
             nn.Conv2d(c, c // 2, 3, padding=1),
             nn.BatchNorm2d(c // 2),
             nn.GELU(),
         )
-        self.out_channels = c // 2   # so wrapping model's head matches
+        self.out_channels = c // 2
 
     def forward(self, features):
-        # features: 4 tensors (B, N, C) or (B, C, H, W)
+
         feats = [_tokens_to_bchw(f) for f in features]
-        # Project + reassemble to 4 different resolutions
+
         r = [self.resize_layers[i](self.projects[i](feats[i])) for i in range(4)]
-        # Progressive fusion from deepest to shallowest
-        x = self.fusions[3](r[3])              # 37×37  → 74×74
-        x = self.fusions[2](r[2], x)           # + 74×74 skip,  → 148×148
-        x = self.fusions[1](r[1], x)           # + 148×148 skip, → 296×296
-        x = self.fusions[0](r[0], x)           # + 296×296 skip, → 592×592
-        x = self.out_conv(x)                   # refine + halve channels
+
+        x = self.fusions[3](r[3])
+        x = self.fusions[2](r[2], x)
+        x = self.fusions[1](r[1], x)
+        x = self.fusions[0](r[0], x)
+        x = self.out_conv(x)
         return x
-
-
-# ══════════════════════════════════════════════════════════════════════
-# Model
-# ══════════════════════════════════════════════════════════════════════
 
 class TimmSemanticModel(nn.Module):
     """Flexible semantic segmentation model using any timm encoder.
@@ -569,7 +526,7 @@ class TimmSemanticModel(nn.Module):
                 n_blocks = self.encoder.num_blocks
                 patch_size = self.encoder.patch_size[0]
             else:
-                # timm plain ViT (DINOv2 via `vit_small_patch14_dinov2.lvd142m` etc.)
+
                 patch_size_guess = 14 if 'patch14' in encoder_name else 16
                 padded_size = img_size + (patch_size_guess - img_size % patch_size_guess) % patch_size_guess
                 self.encoder = timm.create_model(
@@ -580,9 +537,6 @@ class TimmSemanticModel(nn.Module):
                 n_blocks = len(self.encoder.blocks)
                 patch_size = self.encoder.patch_embed.patch_size[0]
 
-            # Which 4 blocks to tap depends on the decoder:
-            #   dpt / dpt_full / segdino_mlp : 4 evenly-spaced layers (low→high)
-            #   ms_linear                    : last 4 layers (Meta's +ms recipe)
             if decoder_type == "ms_linear":
                 self.feature_indices = [n_blocks - 4, n_blocks - 3,
                                         n_blocks - 2, n_blocks - 1]
@@ -633,8 +587,7 @@ class TimmSemanticModel(nn.Module):
             self.head = nn.Conv2d(self.decoder.out_channels, num_classes, 1)
             self.patch_size = patch_size
         else:
-            # Hierarchical encoder: use features_only + UNet++ decoder
-            # Pass img_size for models that need it (e.g., Swin)
+
             encoder_kwargs = dict(
                 pretrained=pretrained,
                 features_only=True, out_indices=(0, 1, 2, 3),
@@ -643,11 +596,10 @@ class TimmSemanticModel(nn.Module):
                 encoder_kwargs['img_size'] = img_size
             self.encoder = timm.create_model(encoder_name, **encoder_kwargs)
 
-            # Get feature channels (handle both BCHW and BHWC formats)
             dummy = torch.randn(1, 3, img_size, img_size)
             with torch.no_grad():
                 feats = self.encoder(dummy)
-            # Some encoders (Swin) output (B,H,W,C), others (ConvNeXt) output (B,C,H,W)
+
             self.channels_last = feats[0].dim() == 4 and feats[0].shape[-1] < feats[0].shape[1]
             if self.channels_last:
                 feature_channels = [f.shape[-1] for f in feats]
@@ -656,8 +608,7 @@ class TimmSemanticModel(nn.Module):
 
             if decoder_type == "unetplusplus":
                 from segmentation_models_pytorch.decoders.unetplusplus.decoder import UnetPlusPlusDecoder
-                # encoder_channels format: [input_channels, *feature_channels]
-                # For 4-level features, we need depth=4
+
                 encoder_channels = [3] + feature_channels
                 decoder_channels = [256, 128, 64, 32]
                 self.decoder = UnetPlusPlusDecoder(
@@ -688,11 +639,9 @@ class TimmSemanticModel(nn.Module):
         orig_h, orig_w = x.shape[2], x.shape[3]
 
         if self.is_vit:
-            # Pad for patch alignment
+
             x, orig_size = self._pad_to_patch(x)
 
-            # Extract intermediate features. When readout="project", also
-            # return CLS so the decoder can inject it into patch tokens.
             need_prefix = (self.cls_readout == "project")
             intermediates = self.encoder.forward_intermediates(
                 x, indices=self.feature_indices,
@@ -700,27 +649,20 @@ class TimmSemanticModel(nn.Module):
                 intermediates_only=True, norm=True,
             )
 
-            # Decode
             decoded = self.decoder(intermediates)
 
-            # Apply head (reduce to num_classes) BEFORE upsampling to save memory.
-            # Bilinear interpolation is linear so result is identical to upsample-then-head,
-            # but we avoid materializing a high-channel tensor at full resolution.
             logits = self.head(decoded)
             logits = F.interpolate(logits, size=x.shape[2:], mode='bilinear', align_corners=False)
 
             if orig_size is not None:
                 logits = logits[:, :, :orig_size[0], :orig_size[1]]
         else:
-            # Hierarchical encoder
+
             features = self.encoder(x)
 
-            # Convert channels-last (Swin) to channels-first
             if self.channels_last:
                 features = [f.permute(0, 3, 1, 2) for f in features]
 
-            # Build feature list matching UNet++ decoder format:
-            # [input, stage1, stage2, stage3, stage4]
             input_feat = x
             decoder_features = [features[-1]] + features[:-1][::-1]
             decoder_features.append(input_feat)
@@ -728,18 +670,12 @@ class TimmSemanticModel(nn.Module):
 
             decoded = self.decoder(decoder_features)
 
-            # Upsample to original size if needed
             if decoded.shape[2] != orig_h or decoded.shape[3] != orig_w:
                 decoded = F.interpolate(decoded, size=(orig_h, orig_w), mode='bilinear', align_corners=False)
 
             logits = self.head(decoded)
 
         return logits
-
-
-# ══════════════════════════════════════════════════════════════════════
-# Lightning Module
-# ══════════════════════════════════════════════════════════════════════
 
 class TimmSemanticModule(pl.LightningModule):
     """Lightning module for timm-based semantic segmentation."""
@@ -779,7 +715,6 @@ class TimmSemanticModule(pl.LightningModule):
             cls_readout=cls_readout,
         )
 
-        # Losses (same as train_unet_semantic.py)
         self.dice_loss = smp.losses.DiceLoss(mode="multiclass", classes=NUM_CLASSES)
         self.focal_loss = smp.losses.FocalLoss(mode="multiclass")
         self.use_lovasz = not no_lovasz
@@ -801,9 +736,7 @@ class TimmSemanticModule(pl.LightningModule):
         wce = F.cross_entropy(logits, masks, weight=self.class_weights)
         loss = dice + focal + wce
         if self.use_lovasz:
-            # smp's _lovasz_grad forces fp32 via .float().cumsum(), so under
-            # AMP autocast we must disable the cast and pass fp32 logits to
-            # avoid torch.dot dtype mismatch (bf16 vs fp32).
+
             with torch.amp.autocast("cuda", enabled=False):
                 lovasz = self.lovasz_loss(logits.float(), masks)
             loss = loss + lovasz
@@ -830,7 +763,7 @@ class TimmSemanticModule(pl.LightningModule):
         return {"val_loss": loss, "preds": preds, "masks": masks}
 
     def configure_optimizers(self):
-        # Differential LR: encoder gets lower LR
+
         encoder_params = list(self.model.encoder.parameters())
         encoder_ids = set(id(p) for p in encoder_params)
         decoder_params = [p for p in self.model.parameters() if id(p) not in encoder_ids]
@@ -846,11 +779,6 @@ class TimmSemanticModule(pl.LightningModule):
         )
         return [optimizer], [scheduler]
 
-
-# ══════════════════════════════════════════════════════════════════════
-# Main
-# ══════════════════════════════════════════════════════════════════════
-
 def make_run_subfolder(base_dir, run_name):
     """Create dated run subfolder: base_dir/run_name/YYYY-MM-DD_NNN/"""
     run_dir = base_dir / run_name
@@ -861,7 +789,6 @@ def make_run_subfolder(base_dir, run_name):
     sub = run_dir / f"{today}_{n:03d}"
     sub.mkdir()
     return sub
-
 
 def main():
     parser = argparse.ArgumentParser(description="Train timm encoder + decoder for semantic segmentation")
@@ -901,7 +828,6 @@ def main():
 
     pl.seed_everything(args.seed)
 
-    # Run naming
     enc_raw = args.encoder[len("hf:"):] if args.encoder.startswith("hf:") else args.encoder
     encoder_short = enc_raw.split(".")[0].replace("/", "_")
     weight_tag = "equalw" if args.equal_weights else "defaultw"
@@ -919,7 +845,6 @@ def main():
     print(f"Run: {run_name}")
     print(f"Output: {run_dir}")
 
-    # Data
     split = get_split(strategy=args.strategy)
     train_transform = get_train_transform(
         args.img_size, p_channel_dropout=args.channel_dropout,
@@ -937,7 +862,6 @@ def main():
     print(f"\nTRAIN: {len(train_ds)} samples")
     print(f"VAL: {len(val_ds)} samples")
 
-    # Model
     module = TimmSemanticModule(
         encoder_name=args.encoder,
         decoder_type=args.decoder,
@@ -960,7 +884,6 @@ def main():
     print(f"Total params: {total_params / 1e6:.1f} M")
     print(f"Trainable params: {trainable_params / 1e6:.1f} M")
 
-    # Callbacks
     checkpoint_best = pl.callbacks.ModelCheckpoint(
         dirpath=run_dir / "checkpoints",
         filename="best-{epoch}-{val_loss:.4f}",
@@ -976,7 +899,6 @@ def main():
     )
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="epoch")
 
-    # Trainer
     trainer = pl.Trainer(
         max_epochs=args.epochs,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
@@ -987,7 +909,6 @@ def main():
         log_every_n_steps=10,
     )
 
-    # Save hparams
     import yaml
     with open(run_dir / "hparams.yaml", "w") as f:
         yaml.dump(vars(args), f, default_flow_style=False)
@@ -996,7 +917,6 @@ def main():
 
     print(f"\nTraining complete. Best checkpoint: {checkpoint_best.best_model_path}")
     print(f"Run dir: {run_dir}")
-
 
 if __name__ == "__main__":
     main()

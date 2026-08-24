@@ -1,7 +1,5 @@
 #!/bin/bash
-# DINOv2 + DPT-meta, Strategy A — encoder-swap comparison (Fig 2f, "DINOv2+DPT").
-# Same decoder + recipe as RADIX, only the DINOv3 encoder is swapped for DINOv2-S/14.
-# Output: output/runs/timm/dpt_meta_vit_small_patch14_dinov2_equalw_drop_shuf_dfcel_semantic7c_A/
+
 #SBATCH --job-name=dinov2_dpt
 #SBATCH --partition=gpu-qi
 #SBATCH --gres=gpu:a100_80:1

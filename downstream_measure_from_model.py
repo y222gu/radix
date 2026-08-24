@@ -24,16 +24,12 @@ from src.splits import get_split
 from src.preprocessing import load_sample_raw, load_sample_normalized, to_uint8
 from src.model_classes import MODEL_REGISTRY, BIO_7_NAMES, get_filled_classes, get_raw_classes
 
-
-# ── Measurement functions ────────────────────────────────────────────────────
-
 def measure_aerenchyma_ratio(bio7):
     """Aerenchyma area / whole root area. Returns 0.0 if no root."""
     wr_area = bio7["Whole Root"].sum()
     if wr_area == 0:
         return 0.0
     return float(bio7["Aerenchyma"].sum() / wr_area)
-
 
 def measure_region_intensity(raw_image, mask, channel_idx, threshold_range=None):
     """Mean intensity of a channel under a binary mask on the raw image.
@@ -55,14 +51,10 @@ def measure_region_intensity(raw_image, mask, channel_idx, threshold_range=None)
         return 0.0
     return float(chan[region].mean())
 
-
-# Channel name → index in raw_image (R=TRITC, G=FITC, B=DAPI)
 CHANNEL_IDX = {"TRITC": 0, "FITC": 1, "DAPI": 2}
 
-# Region → bio-7 mask name. Order matters for the measurement column order.
 INTENSITY_REGIONS = ["Exodermis", "Endodermis", "Vascular"]
 INTENSITY_CHANNELS = ["TRITC", "FITC"]
-
 
 def parse_range(spec):
     """Parse a keep-range spec into a (low, high) tuple of floats-or-None.
@@ -95,14 +87,12 @@ def parse_range(spec):
         raise _ap.ArgumentTypeError(f"Range {spec!r}: low ({low}) > high ({high})")
     return (low, high)
 
-
 def format_range(rng):
     """Render a (low, high) tuple as 'min-5000', '4000-5000', etc."""
     low, high = rng
     lo_s = "min" if low is None else f"{low:g}"
     hi_s = "max" if high is None else f"{high:g}"
     return f"{lo_s}-{hi_s}"
-
 
 def extract_measurements(bio7, raw_image, intensity_thresholds=None):
     """Extract all downstream measurements from bio-7 masks and raw image.
@@ -120,7 +110,7 @@ def extract_measurements(bio7, raw_image, intensity_thresholds=None):
     Returns:
         dict with measurement values.
     """
-    # Resize masks to raw image dimensions if needed
+
     raw_h, raw_w = raw_image.shape[:2]
     mask_h, mask_w = bio7["Whole Root"].shape[:2]
 
@@ -141,7 +131,6 @@ def extract_measurements(bio7, raw_image, intensity_thresholds=None):
                 raw_image, bio7[region], CHANNEL_IDX[channel], rng,
             )
     return out
-
 
 def parse_threshold_args(global_tritc, global_fitc, threshold_specs):
     """Build nested {region: {channel: (low, high)}} dict from CLI args.
@@ -176,9 +165,8 @@ def parse_threshold_args(global_tritc, global_fitc, threshold_specs):
             raise _ap.ArgumentTypeError(
                 f"Unknown channel {channel!r}; must be one of {INTENSITY_CHANNELS}")
         thresholds[region][channel] = parse_range(val)
-    # Drop empty regions for cleaner display
-    return {r: c for r, c in thresholds.items() if c}
 
+    return {r: c for r, c in thresholds.items() if c}
 
 MEASUREMENT_COLS = [
     "aerenchyma_ratio",
@@ -186,9 +174,6 @@ MEASUREMENT_COLS = [
     "endodermis_TRITC", "endodermis_FITC",
     "vascular_TRITC", "vascular_FITC",
 ]
-
-
-# ── Inference helpers (reused from eval_bio7.py) ────────────────────────────
 
 def run_yolo_inference(model, sample, img_size):
     img = load_sample_normalized(sample)
@@ -202,7 +187,6 @@ def run_yolo_inference(model, sample, img_size):
         masks = np.zeros((0, h, w), dtype=np.uint8)
         labels = np.zeros(0, dtype=np.int32)
     return masks, labels, h, w
-
 
 def run_unet_multilabel_inference(model, sample, img_size):
     import torch
@@ -221,7 +205,6 @@ def run_unet_multilabel_inference(model, sample, img_size):
         filled[c] = (prob_full > 0.5).astype(np.uint8)
     return filled, h, w
 
-
 def run_unet_semantic_inference(model, sample, img_size):
     """U-Net++ semantic inference → (H,W) argmax semantic mask."""
     import torch
@@ -236,7 +219,6 @@ def run_unet_semantic_inference(model, sample, img_size):
     sem_mask = logits.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.int32)
     sem_mask = cv2.resize(sem_mask, (w, h), interpolation=cv2.INTER_NEAREST)
     return sem_mask, h, w
-
 
 def run_microsam_inference(models, sample, img_size):
     """micro-SAM inference with 6 per-class models → dict {0..5: (H,W) binary mask}."""
@@ -255,14 +237,14 @@ def run_microsam_inference(models, sample, img_size):
         predictor, segmenter = models[cls_id]
 
         if cls_id == 1:
-            # Aerenchyma: use full AIS (watershed) for multi-instance
+
             pred_instances = automatic_instance_segmentation(
                 predictor=predictor, segmenter=segmenter,
                 input_path=img_uint8, ndim=2,
             )
             pred_binary = (pred_instances > 0).astype(np.uint8)
         else:
-            # Single-instance classes (0,2-5): threshold UNETR foreground
+
             segmenter.initialize(img_uint8, ndim=2)
             pred_binary = (segmenter._foreground > 0.015).astype(np.uint8)
 
@@ -271,7 +253,6 @@ def run_microsam_inference(models, sample, img_size):
                                      interpolation=cv2.INTER_NEAREST)
         filled[cls_id] = pred_binary
     return filled, h, w
-
 
 def get_pred_bio7(model, sample, model_key, cfg, img_size):
     """Run inference and convert to bio-7 masks."""
@@ -291,16 +272,12 @@ def get_pred_bio7(model, sample, model_key, cfg, img_size):
         raise ValueError(f"Inference not implemented for {model_key}")
     return cfg.to_bio7(pred_native, h, w)
 
-
 def get_gt_bio7(sample, cfg):
     """Load GT and convert to bio-7 masks."""
     img = load_sample_normalized(sample)
     h, w = img.shape[:2]
     gt_native = cfg.load_gt(sample, h, w)
     return cfg.to_bio7(gt_native, h, w)
-
-
-# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Extract downstream measurements from bio-7 masks")
@@ -344,7 +321,6 @@ def main():
     split = get_split(strategy=args.strategy)
     samples = split["test"]
 
-    # Output directory
     if args.out_dir:
         out_dir = Path(args.out_dir)
     elif args.checkpoint:
@@ -359,7 +335,6 @@ def main():
         out_dir = Path("output/downstream")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load model if needed
     model = None
     cfg = None
     if args.source in ("prediction", "both"):
@@ -427,7 +402,6 @@ def main():
                 model[cls_id] = (predictor, segmenter)
             print(f"  Loaded {len(model)}/6 class models")
 
-    # For GT, use any model config that produces bio-7 (yolo_overlap_false is the default)
     gt_cfg = MODEL_REGISTRY.get(args.model_key, MODEL_REGISTRY["yolo_overlap_false"])
 
     csv_fields = ["sample_id", "species", "microscope", "experiment"] + MEASUREMENT_COLS
@@ -436,7 +410,6 @@ def main():
     print(f"Test set: {args.strategy} ({len(samples)} samples)")
     print(f"Output: {out_dir}")
 
-    # ── Process samples ──
     gt_rows = []
     pred_rows = []
 
@@ -449,7 +422,6 @@ def main():
             "experiment": sample.experiment,
         }
 
-        # GT measurements
         if args.source in ("gt", "both"):
             gt_bio7 = get_gt_bio7(sample, gt_cfg)
             gt_measurements = extract_measurements(gt_bio7, raw_image, intensity_thresholds)
@@ -458,7 +430,6 @@ def main():
                 gt_row[k] = round(v, 6)
             gt_rows.append(gt_row)
 
-        # Prediction measurements
         if args.source in ("prediction", "both"):
             pred_bio7 = get_pred_bio7(model, sample, args.model_key, cfg, args.img_size)
             pred_measurements = extract_measurements(pred_bio7, raw_image, intensity_thresholds)
@@ -467,7 +438,6 @@ def main():
                 pred_row[k] = round(v, 6)
             pred_rows.append(pred_row)
 
-    # ── Save CSVs ──
     if gt_rows:
         gt_csv = out_dir / "gt_measurements.csv"
         with open(gt_csv, "w", newline="") as f:
@@ -485,7 +455,6 @@ def main():
         print(f"Prediction measurements saved to {pred_csv} ({len(pred_rows)} samples)")
 
     print(f"\nDone. Output: {out_dir}")
-
 
 if __name__ == "__main__":
     main()

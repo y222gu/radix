@@ -1,17 +1,7 @@
-/**
- * Shared renderer for figure 4e (2x2 intensity correlations) and 4f
- * (aerenchyma-ratio correlation). One scatter panel per call to drawPanel.
- *
- * Species → marker shape + colour mapping is fixed across panels.
- */
+
+
 (function () {
 
-// Palette mirrors fig1b sunburst - keep species colours aligned across the paper.
-//   Rice    #9ab2d4 (light blue)   |  Millet  #9393c9 (periwinkle)
-//   Sorghum #514a8d (dark navy)    |  Solanum #ab8b58 (dicot tan, used for ALL
-//                                     Solanum samples per user request - the
-//                                     fig1b sub-species shade #5c3f4b is not
-//                                     used here.)
 const SPECIES_INFO = {
   "Rice":    { color: "#9ab2d4", symbol: d3.symbolCircle,    label: "Rice"    },
   "Millet":  { color: "#9393c9", symbol: d3.symbolSquare,    label: "Millet"  },
@@ -20,9 +10,6 @@ const SPECIES_INFO = {
 };
 const SPECIES_ORDER = ["Rice", "Millet", "Sorghum", "Solanum"];
 
-// Mulberry32 - small, deterministic PRNG. Used to shuffle scatter points so
-// species are interleaved (no single species sits entirely on top) while the
-// figure remains reproducible across reloads.
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -53,18 +40,6 @@ function linreg(x, y) {
   return { slope, intercept, r2: 1 - ssRes / ssTot, n };
 }
 
-/**
- * Draw one scatter subpanel into `parent` (a d3 selection on a <g> or <svg>).
- *
- * @param {object} opts
- *   x0, y0, w, h      Subpanel box on the parent canvas (mm).
- *   title             Subpanel title (mm-bold, above plot).
- *   points            [{species, x, y}, ...] in data units.
- *   xLabel, yLabel    Axis titles.
- *   tickFmt           d3.format string ("d", ".2f", etc.) for tick labels.
- *   tickCount         Approximate tick count per axis (default 4).
- *   margins           Optional {top,right,bottom,left} override (mm).
- */
 function drawPanel(parent, opts) {
   const {
     x0, y0, w, h, title, points,
@@ -91,8 +66,6 @@ function drawPanel(parent, opts) {
 
   const g = parent.append("g").attr("transform", `translate(${x0 + M.left},${y0 + M.top})`);
 
-  // Regression line (solid black) - drawn FIRST so the y = x dashed reference
-  // sits on top and stays visible where the two overlap.
   const reg = linreg(xVals, yVals);
   const ry1 = reg.slope * xLo + reg.intercept;
   const ry2 = reg.slope * xHi + reg.intercept;
@@ -101,14 +74,12 @@ function drawPanel(parent, opts) {
     .attr("x2", x(xHi)).attr("y2", y(ry2))
     .attr("stroke", "#222").attr("stroke-width", 0.3);
 
-  // y = x reference (grey dashed) - painted after the regression line.
   g.append("line")
     .attr("x1", x(xLo)).attr("y1", y(xLo))
     .attr("x2", x(xHi)).attr("y2", y(xHi))
     .attr("stroke", "#bbb").attr("stroke-width", 0.18)
     .attr("stroke-dasharray", "0.7 0.5");
 
-  // Axes
   g.append("line").attr("x1", 0).attr("x2", plotW)
     .attr("y1", plotH).attr("y2", plotH)
     .attr("stroke", "black").attr("stroke-width", 0.2);
@@ -138,9 +109,6 @@ function drawPanel(parent, opts) {
       .text(fmt(d));
   });
 
-  // Data markers - interleave points across species so no single species
-  // sits entirely on top. Uses a seeded Fisher-Yates shuffle so the order
-  // is deterministic across reloads (important for reproducible figures).
   const rng = mulberry32(0xC0FFEE);
   const symCache = {};
   for (const sp of SPECIES_ORDER) {
@@ -161,14 +129,11 @@ function drawPanel(parent, opts) {
       .attr("fill-opacity", 0.5);
   });
 
-  // R² annotation - top-left corner of the plot area (6.5 pt bold).
   g.append("text").attr("x", 0.6).attr("y", 2.2)
     .attr("text-anchor", "start")
     .attr("font-size", 2.29).attr("font-weight", "bold")
     .text(`R² = ${reg.r2.toFixed(3)}`);
 
-  // Subpanel title - centred over the plot region. Accepts either a string
-  // (single line) or an array of strings (multi-line rendered as <tspan>s).
   const titleLines = Array.isArray(title) ? title : [title];
   const titleFont = titleLines.length > 1 ? 2.2 : 2.47;
   const titleLineH = 2.6;
@@ -184,7 +149,6 @@ function drawPanel(parent, opts) {
       .text(line);
   });
 
-  // Axis titles (6 pt, bold). Tight gap to the tick labels (~0.5 mm).
   parent.append("text")
     .attr("x", x0 + M.left + plotW / 2)
     .attr("y", y0 + M.top + plotH + 5.5)
@@ -199,9 +163,6 @@ function drawPanel(parent, opts) {
     .text(yLabel);
 }
 
-/**
- * Render a horizontal species legend (4 entries, marker + name).
- */
 function drawLegend(parent, x0, y0, opts) {
   const { itemGap = 14, markerSize = 2.6, fontSize = 2.0 } = opts || {};
   let cx = x0;

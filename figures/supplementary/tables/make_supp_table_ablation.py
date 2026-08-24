@@ -20,7 +20,6 @@ Open the HTML via `python3 -m http.server` and click Save PNG / Save SVG.
 import csv
 from pathlib import Path
 
-# Reuse the shared helpers + style from the figure-2 supp-table builder.
 from make_supp_tables_fig2 import (
     summary, fmt_mean_std, write_csv, write_markdown,
     render_table_svg, wrap_html,
@@ -29,15 +28,12 @@ from make_supp_tables_fig2 import (
 HERE = Path(__file__).resolve().parent
 EVAL = HERE.parent / "eval"
 
-# Ablation rows: (section, label, run-short-name, is_baseline). Short names
-# map to subdirectories of supplementary/eval/.
 ABLATIONS = [
     ("Encoder training strategy", "Frozen encoder",                                "ablation/frozen_encoder",  False),
     ("Encoder training strategy", "Fine-tuned encoder (RADIX)",                    "radix",                    True),
     ("Loss function",             "Dice + Focal + weighted CE",                    "ablation/loss_no_lovasz",  False),
     ("Loss function",             "Dice + Focal + weighted CE + Lovasz (RADIX)",   "radix",                    True),
 ]
-
 
 def load_miou(run_rel: str, split: str) -> list[float]:
     """Read mean_IoU (sample-level, Bio-7) from a single run's split."""
@@ -57,7 +53,6 @@ def load_miou(run_rel: str, split: str) -> list[float]:
                 pass
     return out
 
-
 def build_rows():
     rows = []
     for section, label, run_rel, _is_base in ABLATIONS:
@@ -75,11 +70,9 @@ def build_rows():
         })
     return rows
 
-
 def main() -> None:
     rows = build_rows()
 
-    # ── CSV / Markdown ──────────────────────────────────────────────
     fields = ["Section", "Variant",
               "Test n", "Test mIoU",
               "Zero n", "Zero mIoU"]
@@ -101,11 +94,10 @@ def main() -> None:
         f"indicated component changed. Test n = {n_test} is the "
         f"in-distribution test split; Out-of-distribution n = {n_zero} is the "
         f"held-out Zeiss split. Whole Root is excluded from the mIoU "
-        f"computation per project convention. Rows labelled \"RADIX\" "
+        f"computation. Rows labelled \"RADIX\" "
         f"mark the recipe reported as RADIX throughout the manuscript.",
     )
 
-    # ── HTML / SVG ──────────────────────────────────────────────────
     columns = [
         {"key": "Variant", "label": "Variant",
          "width_mm": 70, "align": "start"},
@@ -118,8 +110,7 @@ def main() -> None:
                    f"(mean ± s.d., n = {n_zero})"],
          "width_mm": 36, "align": "middle"},
     ]
-    # Drop section column from per-row body; expose section breaks via
-    # the booktabs-style section_dividers feature instead.
+
     sec_seen = set()
     section_dividers = []
     body_rows = []
@@ -147,7 +138,6 @@ def main() -> None:
     print(f"→ {md_path.relative_to(HERE)}")
     print(f"→ {html_path.relative_to(HERE)}   viewBox = {w_mm:.1f} × {h_mm:.1f} mm")
     print("\nOpen the HTML via `python3 -m http.server` and click Save PNG / Save SVG.")
-
 
 if __name__ == "__main__":
     main()

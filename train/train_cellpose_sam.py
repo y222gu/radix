@@ -31,23 +31,21 @@ from src.preprocessing import load_sample_normalized
 from src.annotation_utils import load_sample_annotations
 from src.splits import get_split, print_split_summary
 
-
 def preprocess_maxproj_unsharp(img):
     """Max projection + unsharp mask → single channel float32 [0, 1]."""
     dapi, fitc, tritc = img[:, :, 0], img[:, :, 1], img[:, :, 2]
     max_proj = np.maximum(np.maximum(dapi, fitc), tritc)
-    # Percentile normalize
+
     lo = np.percentile(max_proj, 1)
     hi = np.percentile(max_proj, 99.8)
     if hi - lo < 1e-6:
         mp_norm = np.zeros_like(max_proj, dtype=np.float32)
     else:
         mp_norm = np.clip((max_proj - lo) / (hi - lo), 0, 1).astype(np.float32)
-    # Unsharp mask
+
     blur = cv2.GaussianBlur(mp_norm, (0, 0), sigmaX=3)
     unsharp = np.clip(cv2.addWeighted(mp_norm, 1.5, blur, -0.5, 0), 0, 1).astype(np.float32)
     return unsharp
-
 
 def prepare_data(samples, class_id, img_size=256):
     """Prepare images and instance labels for a single class.
@@ -62,13 +60,11 @@ def prepare_data(samples, class_id, img_size=256):
     images, labels = [], []
 
     for sample in samples:
-        img = load_sample_normalized(sample)  # (H, W, 3) float32 [0, 1]
+        img = load_sample_normalized(sample)
         h, w = img.shape[:2]
 
-        # Preprocessing: max projection + unsharp → 1 channel
         single_ch = preprocess_maxproj_unsharp(img)
 
-        # Build instance mask for this class
         anns = load_sample_annotations(sample, h, w, raw_classes=True)
         instance_mask = np.zeros((h, w), dtype=np.int32)
         inst_id = 0
@@ -77,12 +73,10 @@ def prepare_data(samples, class_id, img_size=256):
                 inst_id += 1
                 instance_mask[anns["masks"][i] > 0] = inst_id
 
-        # Resize to target
         img_resized = cv2.resize(single_ch, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
         mask_resized = cv2.resize(instance_mask, (img_size, img_size),
                                    interpolation=cv2.INTER_NEAREST)
 
-        # Cellpose expects (3, H, W) — stack single channel 3x
         img_chw = np.stack([img_resized, img_resized, img_resized], axis=0).astype(np.float32)
 
         images.append(img_chw)
@@ -93,7 +87,6 @@ def prepare_data(samples, class_id, img_size=256):
           f"{len(images)} samples, {n_with_instances} with instances")
     return images, labels
 
-
 def train_single_class(class_id, split, args):
     """Train Cellpose-SAM for a single annotation class."""
     class_name = ANNOTATED_CLASSES[class_id]
@@ -101,7 +94,6 @@ def train_single_class(class_id, split, args):
     print(f"Training class {class_id}: {class_name}")
     print(f"{'='*60}")
 
-    # Prepare data
     print("  Loading training data...")
     train_imgs, train_labels = prepare_data(split["train"], class_id, args.img_size)
     print("  Loading validation data...")
@@ -111,14 +103,12 @@ def train_single_class(class_id, split, args):
         print(f"  No training data for class {class_id}, skipping")
         return None
 
-    # Output directory
     pretrained_tag = "cpsam" if not args.no_pretrained else "scratch"
     run_name = f"cellpose_{pretrained_tag}_class{class_id}_{args.strategy}"
     base_dir = OUTPUT_DIR / "runs" / "cellpose_sam" / run_name
     run_dir = make_run_subfolder(base_dir)
     print(f"  Output: {run_dir}")
 
-    # Save hyperparameters
     hparams = {
         "class_id": class_id,
         "class_name": class_name,
@@ -136,11 +126,9 @@ def train_single_class(class_id, split, args):
     with open(run_dir / "hparams.yaml", "w") as f:
         yaml.dump(hparams, f, sort_keys=True)
 
-    # Load model
     print(f"  Loading Cellpose-SAM (cpsam)...")
     model = models.CellposeModel(gpu=True, pretrained_model="cpsam")
 
-    # Train using Cellpose's native training loop
     print(f"  Training: {len(train_imgs)} train, {len(val_imgs)} val, "
           f"{args.epochs} epochs, lr={args.lr}, batch={args.batch_size}, "
           f"img_size={args.img_size}")
@@ -158,12 +146,12 @@ def train_single_class(class_id, split, args):
         learning_rate=args.lr,
         n_epochs=args.epochs,
         weight_decay=args.weight_decay,
-        normalize=False,  # Already normalized
-        compute_flows=True,  # Precompute flows for efficiency
+        normalize=False,
+        compute_flows=True,
         save_path=str(run_dir),
         save_every=args.save_every,
         save_each=True,
-        bsize=args.img_size,  # Use full image, no cropping
+        bsize=args.img_size,
         min_train_masks=0,
         model_name=f"cellpose_sam_class{class_id}",
         rescale=False,
@@ -172,7 +160,6 @@ def train_single_class(class_id, split, args):
     elapsed = time.time() - t0
     print(f"  Training completed in {elapsed/60:.1f} min")
 
-    # Save training history
     history = {
         "train_losses": train_losses.tolist(),
         "test_losses": test_losses.tolist(),
@@ -183,7 +170,6 @@ def train_single_class(class_id, split, args):
     with open(run_dir / "training_history.json", "w") as f:
         json.dump(history, f, indent=2)
 
-    # Plot training curves
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -193,7 +179,6 @@ def train_single_class(class_id, split, args):
         epochs = np.arange(len(train_losses))
         ax.plot(epochs, train_losses, label="Train Loss", alpha=0.7)
 
-        # Test loss computed every 10 epochs
         test_mask = test_losses > 0
         if test_mask.any():
             ax.plot(epochs[test_mask], test_losses[test_mask], "o-",
@@ -205,7 +190,6 @@ def train_single_class(class_id, split, args):
         ax.legend()
         ax.grid(True, alpha=0.3)
 
-        # Add final metrics text
         ax.text(0.98, 0.98, f"Final train: {train_losses[-1]:.4f}\n"
                 f"Final val: {test_losses[test_mask][-1]:.4f}" if test_mask.any() else "",
                 transform=ax.transAxes, ha="right", va="top", fontsize=9,
@@ -222,7 +206,6 @@ def train_single_class(class_id, split, args):
     print(f"  Final train loss: {train_losses[-1]:.4f}")
 
     return run_dir
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -260,7 +243,6 @@ def main():
     print("All training complete:")
     for cls_id, path in results.items():
         print(f"  Class {cls_id} ({ANNOTATED_CLASSES[cls_id]}): {path}")
-
 
 if __name__ == "__main__":
     main()

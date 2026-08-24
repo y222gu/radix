@@ -8,7 +8,6 @@ import numpy as np
 
 from .config import SampleRecord
 
-
 def parse_yolo_annotations(
     path: Path,
     img_w: int,
@@ -28,7 +27,7 @@ def parse_yolo_annotations(
     with open(path) as f:
         for line in f:
             parts = line.strip().split()
-            if len(parts) < 7:  # class + at least 3 points
+            if len(parts) < 7:
                 continue
             class_id = int(parts[0])
             coords = [float(x) for x in parts[1:]]
@@ -44,7 +43,6 @@ def parse_yolo_annotations(
                 })
     return annotations
 
-
 def polygon_to_mask(polygon: np.ndarray, h: int, w: int) -> np.ndarray:
     """Rasterize a single polygon to a binary mask.
 
@@ -58,14 +56,11 @@ def polygon_to_mask(polygon: np.ndarray, h: int, w: int) -> np.ndarray:
     mask = np.zeros((h, w), dtype=np.uint8)
     pts = np.round(polygon).astype(np.int32).reshape((-1, 1, 2))
     cv2.fillPoly(mask, [pts], 1)
-    # Fix holes from self-intersecting polygons: cv2.fillPoly uses the
-    # even-odd rule, so self-crossings create unfilled interior regions.
-    # Re-fill from outer contour to produce a solid mask.
+
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if contours:
         cv2.drawContours(mask, contours, -1, 1, thickness=cv2.FILLED)
     return mask
-
 
 def polygons_to_instance_masks(
     annotations: List[Dict],
@@ -91,7 +86,6 @@ def polygons_to_instance_masks(
     masks_list = []
     labels_list = []
 
-    # Separate annotations by class
     outer_endo = None
     inner_endo = None
     outer_exo = None
@@ -111,37 +105,33 @@ def polygons_to_instance_masks(
         else:
             others.append(ann)
 
-    # Class 0 (Whole Root) and Class 1 (Aerenchyma) — direct mapping
     for ann in others:
         mask = polygon_to_mask(ann["polygon"], h, w)
         if mask.sum() > 0:
             masks_list.append(mask)
             labels_list.append(ann["class_id"])
 
-    # Endodermis ring: outer - inner (target class 2)
     if outer_endo is not None and inner_endo is not None:
         outer_mask = polygon_to_mask(outer_endo, h, w)
         inner_mask = polygon_to_mask(inner_endo, h, w)
         ring_mask = np.clip(outer_mask.astype(np.int8) - inner_mask.astype(np.int8), 0, 1).astype(np.uint8)
         if ring_mask.sum() > 0:
             masks_list.append(ring_mask)
-            labels_list.append(2)  # Endodermis
+            labels_list.append(2)
 
-    # Vascular: inner endodermis polygon (target class 3)
     if inner_endo is not None:
         vasc_mask = polygon_to_mask(inner_endo, h, w)
         if vasc_mask.sum() > 0:
             masks_list.append(vasc_mask)
-            labels_list.append(3)  # Vascular
+            labels_list.append(3)
 
-    # Exodermis ring: outer - inner (target class 4), only when 5-class mode
     if num_classes >= 5 and outer_exo is not None and inner_exo is not None:
         outer_mask = polygon_to_mask(outer_exo, h, w)
         inner_mask = polygon_to_mask(inner_exo, h, w)
         ring_mask = np.clip(outer_mask.astype(np.int8) - inner_mask.astype(np.int8), 0, 1).astype(np.uint8)
         if ring_mask.sum() > 0:
             masks_list.append(ring_mask)
-            labels_list.append(4)  # Exodermis
+            labels_list.append(4)
 
     if not masks_list:
         return {
@@ -155,7 +145,6 @@ def polygons_to_instance_masks(
     boxes = masks_to_boxes(masks)
 
     return {"masks": masks, "labels": labels, "boxes": boxes}
-
 
 def masks_to_boxes(masks: np.ndarray) -> np.ndarray:
     """Compute bounding boxes from binary masks.
@@ -174,7 +163,6 @@ def masks_to_boxes(masks: np.ndarray) -> np.ndarray:
             continue
         boxes[i] = [xs.min(), ys.min(), xs.max(), ys.max()]
     return boxes
-
 
 def polygons_to_semantic_mask(
     annotations: List[Dict],
@@ -199,14 +187,11 @@ def polygons_to_semantic_mask(
     outer_exo = None
     inner_exo = None
 
-    # Paint in priority order
-    # 1. Whole Root (class 0 → label 1)
     for ann in annotations:
         if ann["class_id"] == 0:
             mask = polygon_to_mask(ann["polygon"], h, w)
             sem[mask > 0] = 1
 
-    # 2. Aerenchyma (class 1 → label 2) + collect ring annotations
     for ann in annotations:
         if ann["class_id"] == 1:
             mask = polygon_to_mask(ann["polygon"], h, w)
@@ -220,19 +205,16 @@ def polygons_to_semantic_mask(
         elif ann["class_id"] == 5:
             inner_exo = ann["polygon"]
 
-    # 3. Endodermis ring (→ label 3)
     if outer_endo is not None and inner_endo is not None:
         outer_m = polygon_to_mask(outer_endo, h, w)
         inner_m = polygon_to_mask(inner_endo, h, w)
         ring = np.clip(outer_m.astype(np.int8) - inner_m.astype(np.int8), 0, 1)
         sem[ring > 0] = 3
 
-    # 4. Vascular (→ label 4)
     if inner_endo is not None:
         vasc_m = polygon_to_mask(inner_endo, h, w)
         sem[vasc_m > 0] = 4
 
-    # 5. Exodermis ring (→ label 5), only when 5-class mode
     if num_classes >= 5 and outer_exo is not None and inner_exo is not None:
         outer_m = polygon_to_mask(outer_exo, h, w)
         inner_m = polygon_to_mask(inner_exo, h, w)
@@ -240,7 +222,6 @@ def polygons_to_semantic_mask(
         sem[ring > 0] = 5
 
     return sem
-
 
 def polygons_to_multilabel_mask(
     annotations: List[Dict],
@@ -278,7 +259,7 @@ def polygons_to_multilabel_mask(
         elif cid == 1:
             mask = polygon_to_mask(ann["polygon"], h, w)
             multilabel[1][mask > 0] = 1.0
-            # Aerenchyma is inside whole root
+
             multilabel[0][mask > 0] = 1.0
         elif cid == 2:
             outer_endo = ann["polygon"]
@@ -289,33 +270,29 @@ def polygons_to_multilabel_mask(
         elif cid == 5:
             inner_exo = ann["polygon"]
 
-    # Endodermis ring: outer - inner (channel 2)
     if outer_endo is not None and inner_endo is not None:
         outer_mask = polygon_to_mask(outer_endo, h, w)
         inner_mask = polygon_to_mask(inner_endo, h, w)
         ring = np.clip(outer_mask.astype(np.int8) - inner_mask.astype(np.int8), 0, 1)
         multilabel[2][ring > 0] = 1.0
-        # Endodermis is inside whole root
+
         multilabel[0][ring > 0] = 1.0
 
-    # Vascular: inner endodermis area (channel 3)
     if inner_endo is not None:
         vasc_mask = polygon_to_mask(inner_endo, h, w)
         multilabel[3][vasc_mask > 0] = 1.0
-        # Vascular is inside whole root
+
         multilabel[0][vasc_mask > 0] = 1.0
 
-    # Exodermis ring: outer - inner (channel 4), only when 5-class mode
     if num_classes >= 5 and outer_exo is not None and inner_exo is not None:
         outer_mask = polygon_to_mask(outer_exo, h, w)
         inner_mask = polygon_to_mask(inner_exo, h, w)
         ring = np.clip(outer_mask.astype(np.int8) - inner_mask.astype(np.int8), 0, 1)
         multilabel[4][ring > 0] = 1.0
-        # Exodermis is inside whole root
+
         multilabel[0][ring > 0] = 1.0
 
     return multilabel
-
 
 def polygons_to_raw_semantic_mask(
     annotations: List[Dict],
@@ -343,46 +320,37 @@ def polygons_to_raw_semantic_mask(
     """
     sem = np.zeros((h, w), dtype=np.int32)
 
-    # Collect polygons by annotation class
     class_polys = {i: [] for i in range(6)}
     for ann in annotations:
         cid = ann["class_id"]
         if cid in class_polys:
             class_polys[cid].append(ann["polygon"])
 
-    # Paint order: largest region first, smaller regions overwrite
-    # 1. Whole root (class 0) → label 1
     for poly in class_polys[0]:
         mask = polygon_to_mask(poly, h, w)
         sem[mask > 0] = 1
 
-    # 2. Outer exo (class 4) → label 5
     for poly in class_polys[4]:
         mask = polygon_to_mask(poly, h, w)
         sem[mask > 0] = 5
 
-    # 3. Inner exo (class 5) → label 6 (cortex region)
     for poly in class_polys[5]:
         mask = polygon_to_mask(poly, h, w)
         sem[mask > 0] = 6
 
-    # 4. Outer endo (class 2) → label 3
     for poly in class_polys[2]:
         mask = polygon_to_mask(poly, h, w)
         sem[mask > 0] = 3
 
-    # 5. Inner endo (class 3) → label 4 (vascular)
     for poly in class_polys[3]:
         mask = polygon_to_mask(poly, h, w)
         sem[mask > 0] = 4
 
-    # 6. Aerenchyma (class 1) → label 2 (painted last, overwrites cortex)
     for poly in class_polys[1]:
         mask = polygon_to_mask(poly, h, w)
         sem[mask > 0] = 2
 
     return sem
-
 
 def polygons_to_raw_binary_masks(
     annotations: List[Dict],
@@ -409,7 +377,6 @@ def polygons_to_raw_binary_masks(
         masks[cid] = combined
 
     return masks
-
 
 def polygons_to_raw_instance_masks(
     annotations: List[Dict],
@@ -448,7 +415,6 @@ def polygons_to_raw_instance_masks(
     boxes = masks_to_boxes(masks)
 
     return {"masks": masks, "labels": labels, "boxes": boxes}
-
 
 def load_sample_annotations(
     sample: SampleRecord,

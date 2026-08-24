@@ -1,17 +1,5 @@
-// Mixed-italic helpers shared by every panel-builder HTML that renders
-// species / genotype labels. Walks a label span's child nodes so any text
-// inside <i>...</i> (or <em>) renders italic and the rest renders upright.
-//
-// Usage in a builder HTML:
-//   <script src="../_mixed_italic.js"></script>
-//   // canvas / PNG export:
-//   drawMixedItalic(ctx, span, fontPx, "Helvetica, Arial, sans-serif",
-//                   centerX, centerY, "center");
-//   // SVG export:
-//   appendMixedItalicTspans(textElement, span);
-//
-// Convention: keep cultivar / variety names and species binomials upright;
-// wrap mutant gene names (slmyb92, slasft, psy1-9, Psy1-9, …) in <i>.
+
+
 (function (root) {
   function _segments(span) {
     const out = [];

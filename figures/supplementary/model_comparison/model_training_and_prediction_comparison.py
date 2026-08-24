@@ -32,11 +32,9 @@ from src.model_classes import fill_contours, yolo_overlap_false_to_bio7
 from src.preprocessing import load_sample_normalized
 from make_supp_training_gallery import _uid_to_record
 
-# Shared per-microscope boost + scale-bar helpers (consistent across supp figs).
 from make_supp_training_gallery import (
     boost_for_microscope, scale_bar_mm, draw_scale_bar,
 )
-
 
 EVAL_DIR = HERE.parent / "eval"
 LOSS_CSV   = HERE / "model_loss_curves.csv"
@@ -44,7 +42,6 @@ PARAMS_CSV = HERE / "model_params.csv"
 OUT_PATH = HERE / "model_training_and_prediction_comparison_600dpi.png"
 RENDER_SIZE = 384
 
-# 8 models from Figure 2f. `run` is the short subdir name under EVAL_DIR.
 MODELS = [
     {"key": "DINOv3 + DPT",       "run": "radix",            "color": "#4e79a7"},
     {"key": "DINOv2 + DPT",       "run": "dinov2_dpt",       "color": "#f28e2b"},
@@ -56,7 +53,6 @@ MODELS = [
     {"key": "YOLO26m",            "run": "yolo26m",          "color": "#ff9da7"},
 ]
 
-# Canonical Fig 1a anatomy palette + paint order.
 COLOR_MAP = {
     "Epidermis":  "#0a9396",
     "Exodermis":  "#f4a261",
@@ -66,12 +62,8 @@ COLOR_MAP = {
     "Aerenchyma": "#264653",
 }
 PAINT_ORDER = ["Epidermis", "Exodermis", "Cortex", "Endodermis", "Vascular", "Aerenchyma"]
-# Classes used for per-panel mIoU (Whole Root excluded).
 MIOU_CLASSES = ["Epidermis", "Exodermis", "Cortex", "Endodermis", "Vascular", "Aerenchyma"]
 
-# Loss function used during training, per model. Surfaced in panel a so each
-# subplot is self-explanatory; the 7 semantic models share the same custom
-# combo, YOLO uses the Ultralytics segmentation losses.
 LOSS_NAMES = {
     "DINOv3 + DPT":       "Dice + Focal + wCE + Lovász",
     "DINOv2 + DPT":       "Dice + Focal + wCE + Lovász",
@@ -83,7 +75,6 @@ LOSS_NAMES = {
     "YOLO26m":            "Box + Cls + DFL + Seg",
 }
 
-
 def per_class_iou(a: np.ndarray, b: np.ndarray) -> float:
     a = a.astype(bool); b = b.astype(bool)
     union = np.logical_or(a, b).sum()
@@ -91,20 +82,15 @@ def per_class_iou(a: np.ndarray, b: np.ndarray) -> float:
         return float("nan")
     return float(np.logical_and(a, b).sum() / union)
 
-
 def mean_iou(gt: dict, pred: dict) -> float:
     """Mean IoU over MIOU_CLASSES, ignoring classes absent from both."""
     vals = [per_class_iou(gt[c], pred[c]) for c in MIOU_CLASSES]
     vals = [v for v in vals if not np.isnan(v)]
     return float(np.mean(vals)) if vals else float("nan")
 
-
 def hex_to_rgb(h):
     h = h.lstrip("#")
     return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-
-
-# ───── tfevents reader (no TF dependency) ───────────────────────────────────
 
 def read_tfevents(path):
     from tensorboard.compat.proto import event_pb2
@@ -126,9 +112,6 @@ def read_tfevents(path):
                     if v.HasField("simple_value"):
                         yield ev.step, v.tag, float(v.simple_value)
 
-
-# ───── Loss curve loaders ───────────────────────────────────────────────────
-
 def load_loss_lightning_csv(run_dir: Path):
     import pandas as pd
     csv_path = run_dir / "logs" / "version_0" / "metrics.csv"
@@ -140,9 +123,7 @@ def load_loss_lightning_csv(run_dir: Path):
     vl = [float(val[e]) if e in val.index else float("nan") for e in epochs]
     return epochs, tl, vl
 
-
 def load_loss_lightning_tb(run_dir: Path):
-    # Lightning sometimes uses version_0, sometimes version_<random>. Scan all.
     files = sorted(glob.glob(str(run_dir / "lightning_logs" / "version_*" / "events.out.tfevents.*")))
     train_pts, val_pts, epoch_map = {}, {}, {}
     for f in files:
@@ -155,7 +136,6 @@ def load_loss_lightning_tb(run_dir: Path):
                 epoch_map[step] = int(round(v))
     if not epoch_map:
         return [], [], []
-    # Map step → epoch using nearest previous epoch reading.
     sorted_epochs = sorted(epoch_map.items())
     def step_to_epoch(s):
         e = 0
@@ -176,7 +156,6 @@ def load_loss_lightning_tb(run_dir: Path):
     tl = [float(np.mean(train_by_epoch[e])) if e in train_by_epoch else float("nan") for e in epochs]
     vl = [float(np.mean(val_by_epoch[e])) if e in val_by_epoch else float("nan") for e in epochs]
     return epochs, tl, vl
-
 
 def load_loss_yolo(run_dir: Path):
     files = sorted(glob.glob(str(run_dir / "tensorboard" / "events.out.tfevents.*")))
@@ -201,7 +180,6 @@ def load_loss_yolo(run_dir: Path):
     vl = [total(val_by_step, e, len(val_tags)) for e in epochs]
     return epochs, tl, vl
 
-
 def load_loss(model):
     rd = RUNS_DIR / model["run"]
     if model["fmt"] == "lightning_csv":
@@ -211,9 +189,6 @@ def load_loss(model):
     if model["fmt"] == "yolo":
         return load_loss_yolo(rd)
     raise ValueError(model["fmt"])
-
-
-# ───── Param counters ───────────────────────────────────────────────────────
 
 def count_params(model):
     import torch
@@ -236,15 +211,11 @@ def count_params(model):
         return float("nan")
     return float("nan")
 
-
-# ───── Mask / image rendering ───────────────────────────────────────────────
-
 def load_polygons_to_bio7(txt_path: Path, h: int, w: int) -> dict:
     anns = parse_yolo_annotations(txt_path, w, h)
     raw = polygons_to_raw_binary_masks(anns, h, w)
     raw = {k: fill_contours(v) for k, v in raw.items()}
     return yolo_overlap_false_to_bio7(raw, h, w)
-
 
 def render_bio7(bio7, h, w):
     img = np.zeros((h, w, 3), dtype=np.uint8)
@@ -255,7 +226,6 @@ def render_bio7(bio7, h, w):
         img[m.astype(bool)] = hex_to_rgb(COLOR_MAP[cls])
     return img
 
-
 def render_composite(sample):
     img = load_sample_normalized(sample)
     tritc, fitc, dapi = img[..., 0], img[..., 1], img[..., 2]
@@ -265,10 +235,7 @@ def render_composite(sample):
     comp[..., 0] += fitc; comp[..., 1] += fitc
     comp[..., 0] += tritc
     comp_u8 = (np.clip(comp, 0, 1) * 255).astype(np.uint8)
-    # Same per-microscope brightness/saturation/sharpness boost as Fig 1c
-    # and every other panel-b style figure in the supplementary set.
     return boost_for_microscope(comp_u8, sample.microscope)
-
 
 def downscale_square(img, size):
     import cv2
@@ -281,9 +248,6 @@ def downscale_square(img, size):
     y0 = (size - nh) // 2; x0 = (size - nw) // 2
     out[y0:y0 + nh, x0:x0 + nw] = resized
     return out
-
-
-# ───── Load loss curves + param counts from local CSVs ──────────────────────
 
 def build_cache(force: bool = False):
     cache = {"loss": {}, "params": {}}
@@ -302,14 +266,9 @@ def build_cache(force: bool = False):
             cache["params"][r["model"]] = float(r["params_M"])
     return cache
 
-
-# ───── Main ─────────────────────────────────────────────────────────────────
-
 def main(force_cache: bool = False):
     cache = build_cache(force=force_cache)
 
-    # Sample selection - hand-picked from the earlier 10-test/5-oneshot random
-    # set (the 9th and 10th test samples and the 5th out-of-distribution sample).
     selected_test = [
         "Tomato_Olympus_Exp1_Lignin_mutants_132",
         "Sorghum_Olympus_Exp88_N3_22",
@@ -320,9 +279,6 @@ def main(force_cache: bool = False):
         "Rice_Zeiss_Exp1_Image_50",
     ]
 
-    # Species + genotype labels (from figure1/Diversity counts.xlsx). The
-    # `sp_italic` flag controls whether the species/genotype line is rendered
-    # in italics (Latin binomials only - cultivars stay upright).
     SAMPLE_META = {
         "Tomato_Olympus_Exp1_Lignin_mutants_132": ("S. lycopersicum, M82", True),
         "Sorghum_Olympus_Exp88_N3_22":            ("Sorghum, Teshale",    False),
@@ -356,7 +312,6 @@ def main(force_cache: bool = False):
             print(f"  {split}: {uid}  mIoU=" +
                   " ".join(f"{m['key'].split()[0]}:{v:.2f}" for m, v in zip(MODELS, mious)))
 
-    # ───── Layout ─────
     plt.rcParams.update({
         "font.family": "sans-serif",
         "font.sans-serif": ["Helvetica", "Arial", "DejaVu Sans"],
@@ -372,29 +327,18 @@ def main(force_cache: bool = False):
     fig_w_in = 180 / MM
     panel_a_in = 2.4
     n_rows_b = len(rows)
-    # Label col only needs to fit the thin grey rectangle (~5mm) so it can be
-    # very narrow now that species/genotype lives inside the Image panel.
     label_ratio = 0.25
     n_img_cols = 2 + len(MODELS)
-    # Square image cells: width = (figure_w * usable_fraction) / (label + N).
     row_h_in = (180 / MM * 0.99) / (label_ratio + n_img_cols)
     panel_b_in = row_h_in * n_rows_b + 0.7
-    # No shared panel titles - just enough headroom for per-subplot bold titles
-    # (panel a) and rotated column headers (panel b).
     title_a_in = 0.30
     title_b_in = 0.20
-    legend_in = 0.30   # bottom legend strip
-    # NOTE: keep this consistent with `gap_in` below - the constant gap between
-    # panel a and panel b is allocated here so panel_b doesn't get compressed.
+    legend_in = 0.30
     _gap_between = 0.55
     fig_h_in = title_a_in + panel_a_in + _gap_between + title_b_in + panel_b_in + legend_in
 
     fig = plt.figure(figsize=(fig_w_in, fig_h_in), facecolor="white")
 
-    # Two separate vertically-stacked gridspecs so panel a can keep room for
-    # y-axis labels (left=0.05) while panel b extends nearly edge-to-edge
-    # (left=0.005). Both share the same vertical schedule:
-    # [ title_a · panel_a · gap · title_b · panel_b ].
     gap_in = 0.55
     top = 0.998
     bottom = 0.005
@@ -417,10 +361,6 @@ def main(force_cache: bool = False):
         top=panel_b_top, bottom=panel_b_bottom + legend_in / fig_h_in,
     )
 
-    # Shared panel titles removed per user request - per-plot bold titles
-    # below + the figure caption in the manuscript carry the same info.
-
-    # ── Panel a ──
     gs_a = gs_panel_a[1].subgridspec(2, 4, hspace=0.60, wspace=0.45)
     for i, m in enumerate(MODELS):
         r, c = i // 4, i % 4
@@ -431,14 +371,8 @@ def main(force_cache: bool = False):
         if ep:
             ax.plot(ep, tl, color=m["color"], lw=0.9, label="Train")
             ax.plot(ep, vl, color="black", lw=0.7, ls="--", label="Val")
-        # In panel a we surface RADIX's full project name; the run still
-        # carries the shorter "DINOv3 + DPT" label everywhere else (including
-        # the panel-b column header) so it matches Fig 2f.
         title_a = "RADIX (DINOv3 + DPT)" if m["key"] == "DINOv3 + DPT" else m["key"]
         loss_name = LOSS_NAMES.get(m["key"], "")
-        # Model name bold (via Arial - matplotlib's TTC loader can't render
-        # Helvetica Bold on macOS); loss-function line below in regular weight,
-        # with extra vertical gap between the two lines.
         ax.text(0.5, 1.14, title_a,
                 transform=ax.transAxes,
                 ha="center", va="bottom",
@@ -452,10 +386,8 @@ def main(force_cache: bool = False):
         ax.tick_params(labelsize=6, colors="black", length=2, pad=1)
         for s in ax.spines.values():
             s.set_color("black"); s.set_linewidth(0.4)
-        # X- and Y-axis labels on every subplot.
         ax.set_xlabel("Epoch", fontsize=6, color="black", labelpad=1)
         ax.set_ylabel("Loss", fontsize=6, color="black", labelpad=2)
-        # Legend on every subplot: short Train / Val (loss function in title).
         ax.legend(loc="upper right", fontsize=6, frameon=False,
                   labelcolor="black", handlelength=1.4, borderaxespad=0.2)
 
@@ -463,8 +395,7 @@ def main(force_cache: bool = False):
     fig.text(0.005, pos.y1 + 0.005, "a", fontsize=12, fontweight="bold",
              color="black", ha="left", va="bottom", fontfamily="Arial")
 
-    # ── Panel b (predictions) ──
-    n_cols = 2 + len(MODELS)  # Image, GT, 8 models
+    n_cols = 2 + len(MODELS)
     gs_b = gs_panel_b[1].subgridspec(
         n_rows_b + 1, n_cols + 1,
         hspace=0.08, wspace=0.015,
@@ -472,14 +403,11 @@ def main(force_cache: bool = False):
         height_ratios=[0.30] + [1] * n_rows_b,
     )
 
-    # Per-column header. Model columns get a "Pred." suffix on a new line so
-    # each header reads as "{model}\nPred." (RADIX stays on its own line).
     def header_for(name):
         if name == "DINOv3 + DPT":
             return "RADIX\n(DINOv3 + DPT)\nPred. Mask"
         return f"{name}\nPred. Mask"
     col_titles = ["Input Image", "G.T. Mask"] + [header_for(m["key"]) for m in MODELS]
-    # Header row - tilted ~45° so labels don't overrun the panel-b title.
     for j, t in enumerate(col_titles):
         ax_h = fig.add_subplot(gs_b[0, j + 1])
         ax_h.set_facecolor("white"); ax_h.set_xticks([]); ax_h.set_yticks([])
@@ -491,12 +419,8 @@ def main(force_cache: bool = False):
                   rotation=45, rotation_mode="anchor",
                   linespacing=1.8)
 
-    # Per-row content: empty label-column cell (just the shared test-split
-    # rectangle is drawn later), mask images, mIoU score, and the
-    # species/genotype label overlaid on top-center of the Image panel.
     for r, (uid, split, comp, gt, preds, mious) in enumerate(rows):
         ax_lbl = fig.add_subplot(gs_b[r + 1, 0])
-        # Transparent so the shared figure-level grey rectangle shows through.
         ax_lbl.patch.set_alpha(0)
         ax_lbl.set_xticks([]); ax_lbl.set_yticks([])
         for s in ax_lbl.spines.values():
@@ -504,15 +428,11 @@ def main(force_cache: bool = False):
         species_geno, sp_italic = SAMPLE_META.get(uid, (uid, False))
         for j, img in enumerate([comp, gt] + preds):
             ax = fig.add_subplot(gs_b[r + 1, j + 1])
-            # Panel facecolor = white so inter-panel gaps look clean; the
-            # rendered mask image itself still has a black canvas inside.
             ax.set_facecolor("white")
             ax.imshow(img)
             ax.set_xticks([]); ax.set_yticks([])
             for s in ax.spines.values():
                 s.set_visible(False)
-            # Species + genotype overlaid on the Image panel (top-center),
-            # plus a 100 µm scale bar at the bottom-right.
             if j == 0:
                 ax.text(0.5, 0.97, species_geno,
                         transform=ax.transAxes,
@@ -521,38 +441,22 @@ def main(force_cache: bool = False):
                         fontstyle="italic" if sp_italic else "normal")
                 pos = gs_b[r + 1, j + 1].get_position(fig)
                 cell_w_mm = (pos.x1 - pos.x0) * fig_w_in * 25.4
-                # Native composite is letterboxed inside the square render
-                # canvas, so compute the actual right/bottom edges of the
-                # image content and tuck the scale bar inside them.
                 ih, iw = comp.shape[:2]
                 content_w_frac = iw / max(ih, iw)
                 content_h_frac = ih / max(ih, iw)
                 right_edge = 0.5 + content_w_frac / 2
                 bottom_edge = 0.5 - content_h_frac / 2
-                # Inset the bar 6 % of the cell width inward from the
-                # inner right edge of the image - matches the default
-                # x_end=0.94 used by the annotator comparison figure so
-                # the right-edge gap reads visually the same.
                 x_end = right_edge - 0.06
                 y_bar = bottom_edge + 0.05
-                # The image only fills `content_w_frac` of the cell
-                # horizontally, so the physical width represented by the
-                # cell width is cell_w_mm / content_w_frac. Feed that to
-                # scale_bar_mm so sb_mm matches the actual axes scale.
                 effective_tile_mm = cell_w_mm * content_w_frac
                 sb_mm = scale_bar_mm(uid, effective_tile_mm)
                 if sb_mm is not None:
-                    # Pass the full cell width as `tile_mm` so the
-                    # axes-fraction (sb_mm / tile_mm) is correct in the
-                    # 0..1 axes coordinate system that spans the cell.
                     draw_scale_bar(ax, sb_mm, cell_w_mm,
                                    label_fontsize=5,
                                    label_fontweight="normal",
                                    x_end=x_end,
                                    y_bar=y_bar,
                                    label_align="right")
-            # "mIoU =" label under the GT panel only; each model column then
-            # shows just the numeric score on the same baseline.
             if j == 1:
                 ax.text(
                     0.5, -0.02, "mIoU =",
@@ -570,8 +474,6 @@ def main(force_cache: bool = False):
                         fontsize=6, color="black",
                     )
 
-    # Shared test-split labels: one per group of consecutive rows that share
-    # the same split. Drawn in figure coords so a single label spans rows.
     groups = []
     prev_split = None
     for r, (_, split, *_) in enumerate(rows):
@@ -583,14 +485,9 @@ def main(force_cache: bool = False):
     from matplotlib.patches import Rectangle
     for split, r0, r1 in groups:
         label = "Out-of-distribution Test" if split == "oneshot" else "In-distribution Test"
-        # Use the Image column's cell extent (column 1) so the grey
-        # rectangle aligns precisely with the top of the first row's
-        # image and the bottom of the last row's image in the group.
         p_top = gs_b[r0 + 1, 1].get_position(fig)
         p_bot = gs_b[r1 + 1, 1].get_position(fig)
         y_mid = (p_top.y1 + p_bot.y0) / 2
-        # Thin grey rectangle: left edge aligns with the panel-b letter
-        # (x=0.005), width just enough for the rotated 6pt test-split label.
         rect_x0 = 0.005
         rect_x1 = 0.025
         rect_y0 = p_bot.y0
@@ -610,12 +507,9 @@ def main(force_cache: bool = False):
     fig.text(0.005, pos.y1 + 0.005, "b", fontsize=12, fontweight="bold",
              color="black", ha="left", va="bottom", fontfamily="Arial")
 
-    # Bottom legend strip for the bio-7 anatomy classes (order matches Fig 2).
     legend_classes = ["Vascular", "Exodermis", "Endodermis", "Cortex",
                       "Epidermis", "Aerenchyma"]
     leg_ax = fig.add_axes([0.0, 0.0, 1.0, legend_in / fig_h_in])
-    # Transparent - otherwise the white patch hides the mIoU score that the
-    # last row of panel b draws just below its panels.
     leg_ax.patch.set_alpha(0)
     leg_ax.set_xlim(0, 1); leg_ax.set_ylim(0, 1)
     leg_ax.set_xticks([]); leg_ax.set_yticks([])
@@ -648,7 +542,6 @@ def main(force_cache: bool = False):
                 bbox_inches=None, pad_inches=0)
     plt.close(fig)
     print(f"\nSaved to {OUT_PATH}")
-
 
 if __name__ == "__main__":
     main(force_cache="--rebuild" in sys.argv)

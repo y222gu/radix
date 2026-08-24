@@ -51,13 +51,9 @@ from src.config import (
 from src.unet_dataset import UNetSemanticDataset
 from src.splits import get_split, print_split_summary
 
-NUM_CLASSES = 7  # bg + 6 anatomical regions
+NUM_CLASSES = 7
 
-# Class names for logging
 CLASS_NAMES = ["bg", "epidermis", "aerenchyma", "endo_ring", "vascular", "exo_ring", "cortex"]
-
-
-# ── Optimizer / scheduler factories ──────────────────────────────────────────
 
 def _build_optimizer(name: str, param_groups: list, lr: float, weight_decay: float):
     if name == "adamw":
@@ -68,7 +64,6 @@ def _build_optimizer(name: str, param_groups: list, lr: float, weight_decay: flo
         return torch.optim.SGD(param_groups, lr=lr, weight_decay=weight_decay,
                                momentum=0.9)
     raise ValueError(f"Unknown optimizer: {name}")
-
 
 def _build_scheduler(name: str, optimizer, max_epochs: int, eta_min: float):
     if name == "cosine":
@@ -81,7 +76,6 @@ def _build_scheduler(name: str, optimizer, max_epochs: int, eta_min: float):
         return torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", factor=0.5, patience=10)
     raise ValueError(f"Unknown scheduler: {name}")
-
 
 class SemanticSegModule(pl.LightningModule):
     """7-class semantic segmentation (softmax, Dice+Focal+CE+Lovász)."""
@@ -110,7 +104,6 @@ class SemanticSegModule(pl.LightningModule):
         self.scheduler_name = scheduler
         self.eta_min = eta_min
 
-        # NASA MicroNet pretrained weight URLs (no package dependency needed)
         _MICRONET_URLS = {
             "micronet": "https://nasa-public-data.s3.amazonaws.com/microscopy_segmentation_models/{encoder}_pretrained_microscopynet_v1.0.pth.tar",
             "imagenet-micronet": "https://nasa-public-data.s3.amazonaws.com/microscopy_segmentation_models/{encoder}_pretrained_imagenet-microscopynet_v1.0.pth.tar",
@@ -150,7 +143,7 @@ class SemanticSegModule(pl.LightningModule):
         if equal_weights:
             weights = [1.0] * NUM_CLASSES
         else:
-            # Class weights: bg=0.5, epidermis=1, aer=configurable, endo=5, vasc=1, exo=5, cortex=1
+
             weights = [0.5, 1.0, aer_weight, 5.0, 1.0, 5.0, 1.0]
         self.register_buffer("class_weights", torch.tensor(weights, dtype=torch.float32))
 
@@ -161,7 +154,7 @@ class SemanticSegModule(pl.LightningModule):
         images = batch["image"]
         masks = batch["mask"]
 
-        logits = self(images)  # (B, 7, H, W)
+        logits = self(images)
         dice = self.dice_loss(logits, masks)
         focal = self.focal_loss(logits, masks)
         wce = F.cross_entropy(logits, masks, weight=self.class_weights)
@@ -178,7 +171,6 @@ class SemanticSegModule(pl.LightningModule):
         self.log(f"{stage}_focal_loss", focal, sync_dist=True)
         self.log(f"{stage}_pixel_acc", correct, prog_bar=True, sync_dist=True)
 
-        # Per-class accuracy (skip background)
         with torch.no_grad():
             for c in range(1, NUM_CLASSES):
                 cls_mask = masks == c
@@ -208,7 +200,6 @@ class SemanticSegModule(pl.LightningModule):
         optimizer = _build_optimizer(self.optimizer_name, param_groups, self.lr, self.weight_decay)
         scheduler = _build_scheduler(self.scheduler_name, optimizer, self.trainer.max_epochs, self.eta_min)
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -283,17 +274,13 @@ def main():
         eta_min=args.eta_min,
     )
 
-    # Run name: model_pretrain_classweight_augmentation_loss_strategy
-    # Model + pretrain
-    pretrain_tag = args.encoder_weights.replace("-", "")  # imagenet, imagenetmicronet, none
+    pretrain_tag = args.encoder_weights.replace("-", "")
 
-    # Class weights
     if args.equal_weights:
         weight_tag = "equalw"
     else:
         weight_tag = f"aer{int(args.aer_weight)}" if args.aer_weight != 2.0 else "defaultw"
 
-    # Augmentation
     aug_parts = []
     if args.channel_dropout > 0:
         aug_parts.append("drop")
@@ -303,8 +290,7 @@ def main():
         aug_parts.append("hue")
     aug_tag = "_".join(aug_parts) if aug_parts else "noaug"
 
-    # Loss
-    loss_tag = "dfce" if args.no_lovasz else "dfcel"  # d=dice, f=focal, ce=wCE, l=lovasz
+    loss_tag = "dfce" if args.no_lovasz else "dfcel"
 
     run_name = f"{args.arch}_{args.encoder}_{pretrain_tag}_{weight_tag}_{aug_tag}_{loss_tag}_semantic7c_{args.strategy}"
     base_run_dir = OUTPUT_DIR / "runs" / "unet" / run_name
@@ -329,7 +315,6 @@ def main():
                     parts.append(f"{key}={metrics[key]:.4f}")
             print(" | ".join(parts), flush=True)
 
-            # Compute per-class IoU/Dice every N epochs
             if self.val_iou_every > 0 and (epoch + 1) % self.val_iou_every == 0:
                 print(f"  Computing val IoU/Dice (epoch {epoch + 1})...")
                 pl_module.eval()
@@ -362,21 +347,19 @@ def main():
                     row[f"{name}_IoU"] = round(iou, 4)
                     row[f"{name}_Dice"] = round(dice, 4)
                     print(f"    {name:15s}  IoU={iou:.4f}  Dice={dice:.4f}")
-                    # Log to TensorBoard
+
                     if trainer.logger:
                         for lg in (trainer.logger if isinstance(trainer.logger, list) else [trainer.logger]):
                             if hasattr(lg, 'experiment') and hasattr(lg.experiment, 'add_scalar'):
                                 lg.experiment.add_scalar(f"val_IoU/{name}", iou, epoch)
                                 lg.experiment.add_scalar(f"val_Dice/{name}", dice, epoch)
 
-                # Mean (skip background)
                 fg_ious = [class_inter[c] / class_union[c] for c in range(1, NUM_CLASSES)
                            if class_union[c] > 0]
                 mean_iou = sum(fg_ious) / len(fg_ious) if fg_ious else float("nan")
                 row["mean_IoU"] = round(mean_iou, 4)
                 print(f"    Mean (no bg): IoU={mean_iou:.4f}")
 
-                # Save to CSV
                 if self.run_dir:
                     iou_path = self.run_dir / "val_iou_dice.csv"
                     with open(iou_path, "a", newline="") as f:
@@ -425,12 +408,11 @@ def main():
         callbacks=callbacks,
         logger=logger,
         log_every_n_steps=10,
-        deterministic=False,  # cross_entropy has no deterministic CUDA impl
+        deterministic=False,
     )
 
     trainer.fit(model, train_dl, val_dl)
 
-    # Plot loss curves
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -472,13 +454,11 @@ def main():
         plt.close(fig)
         print(f"Loss curve saved to {plot_path}")
 
-    # Test — evaluate without logging to TensorBoard (avoid polluting training curves)
     print("\n" + "=" * 60)
     print("EVALUATING ON TEST SET")
     trainer.logger = False
     test_results = trainer.test(model, test_dl, ckpt_path="best")
     print(f"Test results: {test_results}")
-
 
 if __name__ == "__main__":
     main()

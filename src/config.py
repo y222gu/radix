@@ -7,25 +7,20 @@ from typing import List, Optional
 
 import yaml
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
-# Auto-detect base directory (works on both Windows and macOS)
 _config_file = Path(__file__).resolve()
-BASE_DIR = _config_file.parent.parent  # plants/ directory
+BASE_DIR = _config_file.parent.parent
 DATA_DIR = BASE_DIR / "data"
 TRAIN_DIR = DATA_DIR / "train"
 VAL_DIR = DATA_DIR / "val"
 TEST_DIR = DATA_DIR / "test"
 ONESHOT_DIR = DATA_DIR / "oneshot"
 PREVIEW_DIR = BASE_DIR / "preview"
-OUTPUT_DIR = BASE_DIR / "output"  # training runs, exports, checkpoints
+OUTPUT_DIR = BASE_DIR / "output"
 
-
-# ── Species & Microscopes ─────────────────────────────────────────────────────
 SPECIES = ["Millet", "Rice", "Sorghum", "Tomato"]
 MICROSCOPES = ["C10", "Olympus", "Zeiss"]
-CHANNELS = ["DAPI", "FITC", "TRITC"]  # Blue, Green, Red
+CHANNELS = ["DAPI", "FITC", "TRITC"]
 
-# ── Annotated classes (as stored in .txt files) ───────────────────────────────
 ANNOTATED_CLASSES = {
     0: "Whole Root",
     1: "Aerenchyma",
@@ -35,20 +30,19 @@ ANNOTATED_CLASSES = {
     5: "Inner Exodermis",
 }
 
-# ── Target classes (semantic meaning for model training) ──────────────────────
 TARGET_CLASSES = {
     0: "Whole Root",
     1: "Aerenchyma",
-    2: "Endodermis",   # ring: outer - inner
-    3: "Vascular",     # area inside inner endodermis
+    2: "Endodermis",
+    3: "Vascular",
 }
 
 TARGET_CLASSES_5 = {
     0: "Whole Root",
     1: "Aerenchyma",
-    2: "Endodermis",   # ring: outer - inner
-    3: "Vascular",     # area inside inner endodermis
-    4: "Exodermis",    # ring: outer - inner (tomato only)
+    2: "Endodermis",
+    3: "Vascular",
+    4: "Exodermis",
 }
 
 NUM_CLASSES = len(TARGET_CLASSES_5)
@@ -59,9 +53,6 @@ def get_target_classes(num_classes: int = 5) -> dict:
         return ANNOTATED_CLASSES
     return TARGET_CLASSES_5 if num_classes >= 5 else TARGET_CLASSES
 
-
-# Which target classes are valid (annotated) per species.
-# All species now have complete annotations for all 5 target classes.
 SPECIES_VALID_CLASSES = {
     "Millet":  {0, 1, 2, 3, 4},
     "Rice":    {0, 1, 2, 3, 4},
@@ -69,34 +60,29 @@ SPECIES_VALID_CLASSES = {
     "Tomato":  {0, 1, 2, 3, 4},
 }
 
-# ── Visualization colors (BGR for OpenCV, RGB for matplotlib) ─────────────────
-# Colors for *annotated* classes (as stored in .txt files)
 CLASS_COLORS_RGB = {
-    0: (0, 0, 255),      # Whole Root — Blue
-    1: (255, 255, 0),     # Aerenchyma — Yellow
-    2: (0, 255, 0),       # Outer Endodermis — Green
-    3: (255, 0, 0),       # Inner Endodermis — Red
-    4: (255, 128, 0),     # Outer Exodermis — Orange
-    5: (128, 0, 255),     # Inner Exodermis — Purple
+    0: (0, 0, 255),
+    1: (255, 255, 0),
+    2: (0, 255, 0),
+    3: (255, 0, 0),
+    4: (255, 128, 0),
+    5: (128, 0, 255),
 }
 
-# Colors for *target* classes (derived semantic regions for model training)
 TARGET_CLASS_COLORS_RGB = {
-    0: (0, 0, 255),      # Whole Root — Blue
-    1: (255, 255, 0),     # Aerenchyma — Yellow
-    2: (0, 255, 0),       # Endodermis — Green
-    3: (255, 0, 0),       # Vascular — Red
-    4: (0, 255, 255),     # Exodermis — Cyan
+    0: (0, 0, 255),
+    1: (255, 255, 0),
+    2: (0, 255, 0),
+    3: (255, 0, 0),
+    4: (0, 255, 255),
 }
 
-# ── Training defaults ─────────────────────────────────────────────────────────
 DEFAULT_IMG_SIZE = 1024
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_EPOCHS = 200
 DEFAULT_PATIENCE = 15
 DEFAULT_LR = 1e-4
 DEFAULT_BACKBONE_LR = 1e-5
-
 
 @dataclass
 class SampleRecord:
@@ -122,14 +108,13 @@ class SampleRecord:
         """Path to a specific channel TIF file."""
         return self.image_dir / f"{self.sample_name}_{channel}.tif"
 
-
 def make_run_subfolder(parent_dir: Path) -> Path:
     """Create a dated subfolder like 2026-03-16_001 inside parent_dir.
 
     Auto-increments the sequence number if the same date already has
     existing subfolders.
     """
-    today = datetime.date.today().isoformat()  # "2026-03-16"
+    today = datetime.date.today().isoformat()
     parent_dir = Path(parent_dir)
     parent_dir.mkdir(parents=True, exist_ok=True)
 
@@ -146,7 +131,6 @@ def make_run_subfolder(parent_dir: Path) -> Path:
     subfolder = parent_dir / f"{today}_{seq:03d}"
     subfolder.mkdir(parents=True, exist_ok=True)
     return subfolder
-
 
 def save_hparams(run_dir: Path, args) -> Path:
     """Save argparse Namespace (or dict) as hparams.yaml in run_dir."""

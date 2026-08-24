@@ -1,6 +1,5 @@
 #!/bin/bash
-# ResNet34 + UNet++, Strategy A — convolutional baseline (Fig 2f, "ResNet34+UNet++").
-# Output: output/runs/unet/unetplusplus_resnet34_imagenet_equalw_drop_shuf_dfcel_semantic7c_A/
+
 #SBATCH --job-name=resnet34_unetpp
 #SBATCH --partition=gpu-qi
 #SBATCH --gres=gpu:a100_80:1

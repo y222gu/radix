@@ -1,4 +1,4 @@
-# Figure 2a
+
 
 import sys
 from pathlib import Path
@@ -27,11 +27,9 @@ COLOR_MAP = {
 }
 PAINT_ORDER = ["Epidermis", "Exodermis", "Cortex", "Endodermis", "Vascular", "Aerenchyma"]
 
-
 def hex_to_rgb(h):
     h = h.lstrip("#")
     return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-
 
 def make_local_sample(uid):
     image_dir = SAMPLE_DIR / uid
@@ -46,7 +44,6 @@ def make_local_sample(uid):
         annotation_path=image_dir / "gt.txt",
     )
 
-
 def render_composite(sample):
     img = load_sample_normalized(sample)
     tritc, fitc, dapi = img[..., 0], img[..., 1], img[..., 2]
@@ -56,7 +53,6 @@ def render_composite(sample):
     comp[..., 0] += fitc; comp[..., 1] += fitc
     comp[..., 0] += tritc
     return (np.clip(comp, 0, 1) * 255).astype(np.uint8)
-
 
 def render_bio7_image(bio7):
     h, w = next(iter(bio7.values())).shape
@@ -68,13 +64,11 @@ def render_bio7_image(bio7):
         img[mask] = hex_to_rgb(COLOR_MAP[cls])
     return img
 
-
 def load_polygons_to_bio7(txt_path, h, w):
     anns = parse_yolo_annotations(txt_path, w, h)
     raw = polygons_to_raw_binary_masks(anns, h, w)
     raw = {k: fill_contours(v) for k, v in raw.items()}
     return yolo_overlap_false_to_bio7(raw, h, w)
-
 
 def main():
     uids = sorted(p.name for p in SAMPLE_DIR.iterdir() if p.is_dir())
@@ -103,7 +97,6 @@ def main():
             print(f"  [warn] {uid}: no pred.txt")
 
         print(f"  {uid}: rendered ({w}×{h})")
-
 
 if __name__ == "__main__":
     main()

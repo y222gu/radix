@@ -8,11 +8,10 @@ from PIL import Image
 SRC = Path("/Users/yifeigu/Documents/Siobhan_Lab/science_art")
 OUT = SRC / "science_art_montage_3x4.png"
 
-CELL = 800       # px per panel
-GAP = 8          # px black gap between panels
+CELL = 800
+GAP = 8
 ROWS, COLS = 3, 4
 BG = (0, 0, 0)
-
 
 def main():
     files = sorted(
@@ -26,7 +25,7 @@ def main():
     others = [p for p in files if not p.name.lower().startswith("tomato")]
     random.shuffle(tomato)
     random.shuffle(others)
-    files = tomato[:COLS] + others   # tomato → row 1, rest fill rows 2–3
+    files = tomato[:COLS] + others
 
     W = COLS * CELL + (COLS - 1) * GAP
     H = ROWS * CELL + (ROWS - 1) * GAP
@@ -43,7 +42,6 @@ def main():
 
     canvas.save(OUT)
     print(f"\nWrote {OUT} ({W}x{H})")
-
 
 if __name__ == "__main__":
     main()

@@ -24,14 +24,12 @@ import torch.nn.functional as F
 
 from train.train_timm_semantic import TimmSemanticModel
 
-
 CONFIGS = [
     ("DINOv3 ViT-S/16 + DPT",          "hf:facebook/dinov3-vits16-pretrain-lvd1689m",
         "dpt",          [2, 5, 8, 11]),
     ("DINOv3 ViT-S/16 + segdino_mlp",  "hf:facebook/dinov3-vits16-pretrain-lvd1689m",
         "segdino_mlp",  [2, 5, 8, 11]),
 ]
-
 
 def check(label, encoder, decoder, expected_indices, img_size=1024):
     print("=" * 78)
@@ -46,7 +44,6 @@ def check(label, encoder, decoder, expected_indices, img_size=1024):
         return False
     m.eval()
 
-    # 1. Encoder metadata
     enc = m.encoder
     embed_dim = getattr(enc, "embed_dim", "?")
     num_blocks = getattr(enc, "num_blocks", None) or len(getattr(enc, "blocks", []))
@@ -60,7 +57,6 @@ def check(label, encoder, decoder, expected_indices, img_size=1024):
     print(f"  feature_indices (model): {m.feature_indices}  (expected {expected_indices})")
     assert m.feature_indices == expected_indices, "feature_indices mismatch"
 
-    # 2. Tap sizes: raw forward_intermediates output
     x = torch.randn(1, 3, img_size, img_size)
     if torch.cuda.is_available():
         m = m.cuda(); x = x.cuda()
@@ -75,19 +71,18 @@ def check(label, encoder, decoder, expected_indices, img_size=1024):
     for i, f in enumerate(feats):
         stats = f"min={f.min().item():+.3f}, max={f.max().item():+.3f}, mean={f.mean().item():+.3f}"
         print(f"    tap {m.feature_indices[i]:>2}: shape={tuple(f.shape)}  {stats}")
-        # Shape check: must be (1, expected_N, embed_dim) or (1, C, H, W) with H*W == expected_N
+
         if f.dim() == 3:
             assert f.shape[0] == 1 and f.shape[2] == embed_dim, f"bad 3D shape {f.shape}"
             assert f.shape[1] == expected_N, f"tokens {f.shape[1]} != expected {expected_N}"
         elif f.dim() == 4:
-            # channels-first or channels-last
+
             dims = list(f.shape[1:])
             assert embed_dim in dims, f"embed_dim {embed_dim} not in {dims}"
             spatial_total = [d for d in dims if d != embed_dim]
             assert spatial_total[0] * spatial_total[1] == expected_N, \
                 f"spatial {spatial_total} doesn't match expected N={expected_N}"
 
-    # 3. Full forward
     with torch.no_grad():
         out = m(x)
     print(f"  forward(x): input {tuple(x.shape)} → output {tuple(out.shape)}")
@@ -100,7 +95,6 @@ def check(label, encoder, decoder, expected_indices, img_size=1024):
     print(f"    probs:  min={probs.min().item():.4f}, max={probs.max().item():.4f}  (should be [0,1])")
     assert 0 <= probs.min().item() and probs.max().item() <= 1 + 1e-5
 
-    # 4. Parameter count breakdown
     total = sum(p.numel() for p in m.parameters())
     enc_total = sum(p.numel() for p in m.encoder.parameters())
     dec_total = sum(p.numel() for p in m.decoder.parameters())
@@ -109,7 +103,6 @@ def check(label, encoder, decoder, expected_indices, img_size=1024):
           f"encoder={enc_total/1e6:.1f}M  decoder={dec_total/1e6:.2f}M  head={head_total/1e3:.1f}K")
     print("  PASS")
     return True
-
 
 if __name__ == "__main__":
     passed = 0

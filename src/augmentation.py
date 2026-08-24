@@ -5,7 +5,6 @@ from typing import Dict, List, Optional, Tuple
 import albumentations as A
 import numpy as np
 
-
 def get_train_transform(
     img_size: int = 1024,
     p_channel_dropout: float = 0.2,
@@ -52,13 +51,11 @@ def get_train_transform(
     ])
     return A.Compose(transforms)
 
-
 def get_val_transform(img_size: int = 1024) -> A.Compose:
     """Validation/test transform — resize only, no augmentation."""
     return A.Compose([
         A.Resize(img_size, img_size),
     ])
-
 
 def apply_transform_with_masks(
     transform: A.Compose,
@@ -79,8 +76,6 @@ def apply_transform_with_masks(
         result = transform(image=image)
         return result["image"], masks
 
-    # Albumentations handles additional_targets for multiple masks
-    # We pass each mask as a separate key
     additional_targets = {}
     mask_keys = []
     for i in range(len(masks)):

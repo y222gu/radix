@@ -22,9 +22,7 @@ from src.preprocessing import load_sample_normalized, to_uint8
 from src.annotation_utils import load_sample_annotations
 from src.splits import get_split, print_split_summary
 
-
 from src.model_classes import fill_contours
-
 
 def compute_val_iou_dice(model, val_samples, img_size):
     """Compute per-class pixel IoU and Dice on a set of samples."""
@@ -60,14 +58,13 @@ def compute_val_iou_dice(model, val_samples, img_size):
         if s["union"] > 0:
             iou[name] = s["inter"] / s["union"]
         else:
-            iou[name] = float("nan")  # both empty → exclude from mean
+            iou[name] = float("nan")
         denom = s["pred"] + s["gt"]
         if denom > 0:
             dice[name] = 2 * s["inter"] / denom
         else:
             dice[name] = float("nan")
     return iou, dice
-
 
 def main():
     parser = argparse.ArgumentParser(description="YOLO instance segmentation training")
@@ -96,12 +93,9 @@ def main():
                         help="Probability of zeroing a random channel per image (0=off)")
     args = parser.parse_args()
 
-    # ── Data split ──────────────────────────────────────────────────────────
     split = get_split(strategy=args.strategy)
     print_split_summary(split)
 
-    # ── Export to YOLO format ───────────────────────────────────────────────
-    # Include strategy in path so different splits don't collide
     run_name = args.model
     dataset_name = run_name if args.strategy == "A" else f"{run_name}_{args.strategy}"
     export_dir = OUTPUT_DIR / "yolo_dataset" / dataset_name
@@ -130,7 +124,6 @@ def main():
         print("Export complete. Exiting.")
         return
 
-    # ── Training setup ──────────────────────────────────────────────────────
     project_dir = OUTPUT_DIR / "runs" / "yolo" / run_name
     run_dir = make_run_subfolder(project_dir)
     dated_name = run_dir.name
@@ -139,7 +132,6 @@ def main():
     model = YOLO(args.resume if args.resume else args.model)
     device = list(range(args.gpus)) if args.gpus > 1 else 0
 
-    # ── Channel dropout via monkey-patching (YOLO has no built-in support) ──
     if args.channel_dropout > 0:
         from ultralytics.models.yolo.segment.train import SegmentationTrainer
         _orig_preprocess = SegmentationTrainer.preprocess_batch
@@ -157,7 +149,6 @@ def main():
         SegmentationTrainer.preprocess_batch = _preprocess_with_dropout
         print(f"Channel dropout enabled: p={args.channel_dropout}")
 
-    # ── TensorBoard + custom IoU/Dice callback ──────────────────────────────
     tb_writer = SummaryWriter(str(run_dir / "tensorboard"))
     print(f"TensorBoard logs: {run_dir / 'tensorboard'}")
     print(f"  Monitor with: tensorboard --logdir {project_dir} --bind_all")
@@ -170,13 +161,11 @@ def main():
         nonlocal iou_csv_header_written
         epoch = trainer.epoch
 
-        # Log Ultralytics built-in metrics to TensorBoard
         for key, val in trainer.metrics.items():
             tb_writer.add_scalar(f"ultralytics/{key}", val, epoch)
         for key, val in trainer.label_loss_items(trainer.tloss, prefix="train").items():
             tb_writer.add_scalar(f"train/{key}", val, epoch)
 
-        # Compute custom val IoU/Dice periodically
         if args.val_iou_every > 0 and val_samples and (epoch + 1) % args.val_iou_every == 0:
             print(f"\n  Computing val IoU/Dice (epoch {epoch + 1})...")
             eval_model = YOLO(trainer.best if Path(trainer.best).exists() else trainer.last)
@@ -192,7 +181,6 @@ def main():
             tb_writer.add_scalar("val_Dice/mean", mean_dice, epoch)
             tb_writer.flush()
 
-            # Save to CSV
             row = {"epoch": epoch + 1}
             for cls_name in iou:
                 row[f"{cls_name}_IoU"] = round(iou[cls_name], 4)
@@ -208,7 +196,6 @@ def main():
 
     model.add_callback("on_fit_epoch_end", on_fit_epoch_end)
 
-    # ── Train ───────────────────────────────────────────────────────────────
     model.train(
         resume=bool(args.resume),
         data=str(yaml_path),
@@ -227,27 +214,26 @@ def main():
         exist_ok=True,
         plots=True,
         cos_lr=True,
-        # ── Mask settings ──
-        overlap_mask=False,       # each instance gets own GT mask (required for overlapping annotations)
-        mask_ratio=1,             # full-resolution masks
-        # ── Augmentation (fluorescence-appropriate) ──
-        hsv_h=0.0,               # no hue augmentation (fluorescence channels have fixed meaning)
-        hsv_s=0.0,               # no saturation augmentation
-        hsv_v=0.2,               # mild brightness
-        degrees=45.0,            # rotation ±45°
-        translate=0.1,           # translation ±10%
-        scale=0.3,               # scale 0.7-1.3
-        shear=10.0,              # shear ±10°
+
+        overlap_mask=False,
+        mask_ratio=1,
+
+        hsv_h=0.0,
+        hsv_s=0.0,
+        hsv_v=0.2,
+        degrees=45.0,
+        translate=0.1,
+        scale=0.3,
+        shear=10.0,
         flipud=0.5,
         fliplr=0.5,
-        bgr=0.2,                 # BGR channel swap (encourages channel-invariant features)
-        mosaic=0.0,              # disabled for fair comparison
-        mixup=0.0,               # disabled for fair comparison
+        bgr=0.2,
+        mosaic=0.0,
+        mixup=0.0,
     )
 
     tb_writer.close()
 
-    # ── Post-training: plot loss curves ─────────────────────────────────────
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -287,7 +273,6 @@ def main():
         plt.close(fig)
         print(f"Loss curve saved to {plot_path}")
 
-    # Plot IoU/Dice curves
     if iou_csv_path.exists():
         df_iou = pd.read_csv(iou_csv_path)
         fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -321,7 +306,6 @@ def main():
         plt.close(fig)
         print(f"Val IoU/Dice curve saved to {plot_path}")
 
-    # ── Post-training: test evaluation ──────────────────────────────────────
     print("\n" + "=" * 60)
     print("EVALUATING ON TEST SET")
     best_path = run_dir / "weights" / "best.pt"
@@ -336,7 +320,6 @@ def main():
             print(f"  {cls_name:25s}  IoU={iou[cls_name]:.4f}  Dice={dice[cls_name]:.4f}")
     else:
         print(f"Best model not found at {best_path}")
-
 
 if __name__ == "__main__":
     main()

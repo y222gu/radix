@@ -28,7 +28,6 @@ PROJECT = HERE.parent.parent.parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(PROJECT))
 
-# Reuse helpers from the existing supplementary scripts.
 from make_supp_training_gallery import (
     FIG1C_DIR, UNCOVERED_DIR, load_species_genotype_map, format_species,
     format_genotype, microscope_for, native_px_for, scale_bar_mm,
@@ -41,27 +40,24 @@ from supp_more_test_prediction_examples import (
 )
 from make_supp_training_gallery import _uid_to_record
 
-
 OUT_PATH = HERE / "supp_training_examples_600dpi.png"
 
-# The 18 sample UIDs the user asked for: row 4 of
-# supp_training_gallery_600dpi.png plus the last two rows (rows 6 & 7).
 CURATED_UIDS = [
-    # Row 4 of the training gallery
+
     "Sorghum_Olympus_Exp32_3_05",
     "Sorghum_Olympus_Exp36_3_01",
     "Sorghum_Olympus_Exp38_3_03",
     "Sorghum_Olympus_Exp42_3_02",
     "Sorghum_Olympus_Exp44_2_01",
     "Sorghum_Olympus_Exp45_4_03",
-    # Row 6
+
     "Sorghum_Olympus_Exp55_2_02",
     "Sorghum_Olympus_Exp56_4_02",
     "Sorghum_Olympus_Exp60_Control_19",
     "Sorghum_Olympus_Exp91_Control_05",
     "Sorghum_C10_Exp5_C7",
     "Tomato_Olympus_Exp5_Solanum_MajkenSlide1_09",
-    # Row 7
+
     "Tomato_Olympus_Exp5_Solanum_MajkenSlide1_44",
     "Tomato_Olympus_Exp10_Suberin_mutants_1-12_05",
     "Tomato_Olympus_Exp9_Suberin_mutants_1-10_30",
@@ -71,7 +67,6 @@ CURATED_UIDS = [
 ]
 assert len(CURATED_UIDS) == 18
 
-# Canvas geometry - same conventions as supp_test_predictions.
 CANVAS_W_MM        = 180.0
 SIDE_PAD_MM        = 2.0
 TOP_PAD_MM         = 6.0
@@ -87,27 +82,23 @@ DPI                = 600
 MM_PER_INCH        = 25.4
 COL_HEADER_PT      = 7.0
 LABEL_PT           = 6.0
-CELLS_PER_SAMPLE   = 2     # Input + GT
+CELLS_PER_SAMPLE   = 2
 
-# TILE_MM derived so the layout fills the 180 mm canvas exactly.
 TILE_MM = ((CANVAS_W_MM - 2 * SIDE_PAD_MM
             - (SAMPLES_PER_ROW - 1) * INTER_SAMPLE_GAP_MM
             - SAMPLES_PER_ROW * LABEL_W_MM
             - SAMPLES_PER_ROW * CELLS_PER_SAMPLE * INTRA_GAP_MM)
            / (SAMPLES_PER_ROW * CELLS_PER_SAMPLE))
 
-
 def per_sample_w_mm() -> float:
     """Width of one sample group = label + 2 tiles + 2 intra-gaps."""
     return LABEL_W_MM + 2 * TILE_MM + 2 * INTRA_GAP_MM
 
-
 def thumb_size_mm():
     return TILE_MM
 
-
 def main():
-    # Build uid → SampleRecord for GT annotation paths + native TIFs.
+
     uid_to_record = _uid_to_record()
 
     sp_gt_map = load_species_genotype_map()
@@ -140,11 +131,6 @@ def main():
         return (SIDE_PAD_MM
                 + sample_col * (sample_w_mm + INTER_SAMPLE_GAP_MM))
 
-    # Column headers: "Input Image | Ground Truth Mask" centred over each
-    # block's two image tiles. The label column itself has no header.
-    # Top margin (canvas top → TOP of header text) matches the bottom
-    # margin (canvas bottom → BOTTOM of legend swatch), which sits at
-    # (0.5 − sw_h/2) × LEGEND_H_MM = 1.65 mm.
     col_label_top_mm = 0.5 * LEGEND_H_MM - 0.45 * LEGEND_H_MM / 2
     col_titles = ["Input Image", "Ground Truth Mask"]
     for sample_col in range(SAMPLES_PER_ROW):
@@ -178,8 +164,6 @@ def main():
             continue
         h, w = hw
 
-        # Input image - prefer the pre-rendered PNG in fig1c_selections or
-        # _uncovered_thumbs (faster and matches the training-gallery boost).
         pil_img, needs_boost = find_image_and_boost(uid)
         if pil_img is None:
             print(f"  ⚠ no input image for {uid}; tile will be blank")
@@ -189,7 +173,6 @@ def main():
             if needs_boost:
                 input_arr = boost_for_microscope(input_arr, microscope_for(uid))
 
-        # GT mask
         gt_bio = load_polygons_to_bio7(rec.annotation_path, h, w)
         if gt_bio is None:
             print(f"  ⚠ no GT annotations for {uid}")
@@ -202,14 +185,12 @@ def main():
         ax_input.imshow(input_arr)
         ax_gt.imshow(gt_img)
 
-        # 100 µm scale bar inside the input tile.
         sb_mm = scale_bar_mm(uid, thumb_mm)
         if sb_mm is not None:
             draw_scale_bar(ax_input, sb_mm, thumb_mm,
                            label_fontsize=LABEL_PT,
                            label_fontweight="normal")
 
-        # Left-side rotated label cell (species top / genotype bottom).
         sp_raw, g_raw = sp_gt_map.get(_norm_uid(uid), ("", ""))
         sp_disp = format_species(sp_raw) or uid.split("_", 1)[0]
         gt_disp = format_genotype(g_raw)
@@ -235,9 +216,8 @@ def main():
                 kw["fontstyle"] = "italic"
             ax_label.text(0.7, 0.5, gt_disp, **kw)
 
-    # Bottom Bio-7 class legend strip.
     from matplotlib.patches import Rectangle
-    # Import the PALETTE from the test-predictions module (same paper palette).
+
     from supp_more_test_prediction_examples import PALETTE
     legend_classes = ["Vascular", "Exodermis", "Endodermis",
                       "Cortex", "Epidermis", "Aerenchyma"]
@@ -269,7 +249,6 @@ def main():
                 bbox_inches=None, pad_inches=0)
     plt.close(fig)
     print(f"\n→ {OUT_PATH.relative_to(HERE)}  (saved at {DPI} dpi)")
-
 
 if __name__ == "__main__":
     main()

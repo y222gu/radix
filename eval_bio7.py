@@ -21,9 +21,6 @@ from src.model_classes import (
     fill_contours, merge_classes, get_filled_classes, get_raw_classes,
 )
 
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
 def semantic_to_raw_filled(sem_mask):
     """Convert 7-class semantic mask to 6 raw annotation filled polygons.
 
@@ -48,7 +45,6 @@ def semantic_to_raw_filled(sem_mask):
     raw[5] = np.isin(sem_mask, [2, 3, 4, 6]).astype(np.uint8)
     return raw
 
-
 def mask_to_yolo_polygons(mask, class_id, h, w, min_area=50):
     """Convert a binary mask to YOLO polygon lines.
     Returns list of strings: 'class_id x1 y1 x2 y2 ...' (normalized coords)."""
@@ -68,20 +64,18 @@ def mask_to_yolo_polygons(mask, class_id, h, w, min_area=50):
         lines.append(f"{class_id} " + " ".join(coords))
     return lines
 
-
 def iou_dice(gt_mask, pred_mask):
     g, p = gt_mask.astype(bool), pred_mask.astype(bool)
     inter = int(np.logical_and(g, p).sum())
     union = int(np.logical_or(g, p).sum())
     pred_sum, gt_sum = int(p.sum()), int(g.sum())
     if union == 0:
-        # Both empty → exclude from mean (nnU-Net convention)
+
         return float("nan"), float("nan")
     iou = inter / union
     denom = pred_sum + gt_sum
     dice = 2 * inter / denom if denom > 0 else 0.0
     return iou, dice
-
 
 def run_yolo_inference(model, sample, img_size):
     """YOLO inference → (masks, labels, h, w)."""
@@ -97,7 +91,6 @@ def run_yolo_inference(model, sample, img_size):
         labels = np.zeros(0, dtype=np.int32)
     return masks, labels, h, w
 
-
 def run_unet_multilabel_inference(model, sample, img_size):
     """U-Net++ multilabel inference → dict {0..5: (H,W) binary mask}.
     Each channel is thresholded at 0.5 to get a filled binary mask."""
@@ -112,13 +105,12 @@ def run_unet_multilabel_inference(model, sample, img_size):
     with torch.no_grad():
         logits = model(tensor)
 
-    probs = torch.sigmoid(logits).squeeze(0).cpu().numpy()  # (6, img_size, img_size)
+    probs = torch.sigmoid(logits).squeeze(0).cpu().numpy()
     filled = {}
     for c in range(probs.shape[0]):
         prob_full = cv2.resize(probs[c], (w, h), interpolation=cv2.INTER_LINEAR)
         filled[c] = (prob_full > 0.5).astype(np.uint8)
     return filled, h, w
-
 
 def run_unet_semantic_inference(model, sample, img_size):
     """U-Net++ semantic inference → (H,W) argmax semantic mask with 7 labels."""
@@ -134,10 +126,9 @@ def run_unet_semantic_inference(model, sample, img_size):
         logits = model(tensor)
 
     sem_mask = logits.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.int32)
-    # Resize to original
+
     sem_mask = cv2.resize(sem_mask, (w, h), interpolation=cv2.INTER_NEAREST)
     return sem_mask, h, w
-
 
 def run_microsam_inference(models, sample, img_size):
     """micro-SAM inference with 6 per-class models → dict {0..5: (H,W) binary mask}.
@@ -168,15 +159,14 @@ def run_microsam_inference(models, sample, img_size):
         predictor, segmenter = models[cls_id]
 
         if cls_id == 1:
-            # Aerenchyma: use full AIS (watershed) for multi-instance
+
             pred_instances = automatic_instance_segmentation(
                 predictor=predictor, segmenter=segmenter,
                 input_path=img_uint8, ndim=2,
             )
             pred_binary = (pred_instances > 0).astype(np.uint8)
         else:
-            # Single-instance classes (0,2-5): threshold UNETR foreground
-            # AIS watershed over-segments large structures
+
             segmenter.initialize(img_uint8, ndim=2)
             pred_binary = (segmenter._foreground > 0.015).astype(np.uint8)
 
@@ -187,7 +177,6 @@ def run_microsam_inference(models, sample, img_size):
 
     return filled, h, w
 
-
 def get_pred_native_yolo(masks, labels, h, w, model_key):
     """Convert raw YOLO inference output to model's native representation.
     Uses merge_classes (no fill_contours) for fair IoU comparison across models."""
@@ -195,7 +184,6 @@ def get_pred_native_yolo(masks, labels, h, w, model_key):
         return get_raw_classes(masks, labels, h, w)
     else:
         return merge_classes(masks, labels, h, w)
-
 
 def make_vis_grid(img_uint8, gt_dict, pred_dict, row_metrics, class_names,
                   class_colors, sample_uid, mean_key, font):
@@ -218,7 +206,7 @@ def make_vis_grid(img_uint8, gt_dict, pred_dict, row_metrics, class_names,
     pred_panels = []
 
     for name in class_names:
-        # Look up color by name or index
+
         if isinstance(name, str) and name in class_colors:
             color = class_colors[name]
         elif isinstance(name, int) and name in class_colors:
@@ -241,13 +229,11 @@ def make_vis_grid(img_uint8, gt_dict, pred_dict, row_metrics, class_names,
         gt_s = overlay(img_uint8, gt_m)
         pred_s = overlay(img_uint8, pred_m)
 
-        # Display name (truncate if too long)
         display_name = name if isinstance(name, str) else str(name)
         if len(display_name) > 20:
             display_name = display_name[:18] + ".."
         cv2.putText(gt_s, display_name, (5, 15), font, 0.35, color, 1)
 
-        # IoU on pred panel
         iou_key = f"{name}_IoU" if isinstance(name, str) else f"native_{name}_IoU"
         iou_val = row_metrics.get(iou_key, "")
         if iou_val != "" and iou_val is not None:
@@ -260,7 +246,6 @@ def make_vis_grid(img_uint8, gt_dict, pred_dict, row_metrics, class_names,
         gt_panels.append(gt_s)
         pred_panels.append(pred_s)
 
-    # mIoU panel
     mean_panel = cv2.resize(img_uint8, (cw, ch))
     miou = row_metrics.get(mean_key, "")
     miou_str = f"mIoU={float(miou):.3f}" if miou != "" and miou is not None else "mIoU=N/A"
@@ -268,7 +253,6 @@ def make_vis_grid(img_uint8, gt_dict, pred_dict, row_metrics, class_names,
     gt_panels.append(mean_panel)
     pred_panels.append(np.zeros((ch, cw, 3), dtype=np.uint8))
 
-    # Assemble
     lbl_w = 35
     gt_lbl = np.zeros((ch, lbl_w, 3), dtype=np.uint8)
     pred_lbl = np.zeros((ch, lbl_w, 3), dtype=np.uint8)
@@ -282,7 +266,6 @@ def make_vis_grid(img_uint8, gt_dict, pred_dict, row_metrics, class_names,
     cv2.putText(title, sample_uid, (5, 18), font, 0.5, (255, 255, 255), 1)
 
     return np.concatenate([title, top, div, bot], axis=0)
-
 
 def save_boxplots(csv_path, out_dir, class_names, pub_colors, model_name):
     """Generate box plots from per-sample CSV."""
@@ -324,7 +307,7 @@ def save_boxplots(csv_path, out_dir, class_names, pub_colors, model_name):
         for patch, c in zip(bp["boxes"], box_colors):
             patch.set_facecolor("none"); patch.set_edgecolor(c)
             patch.set_linewidth(1.2)
-        # Scatter individual data points on top
+
         for i, (pos, vals, c) in enumerate(zip(positions, data, box_colors)):
             jitter = np.random.default_rng(42).uniform(-w * 0.3, w * 0.3, size=len(vals))
             ax.scatter(pos + jitter, vals, c=c, s=6, alpha=0.4, edgecolors="none", zorder=3)
@@ -349,9 +332,6 @@ def save_boxplots(csv_path, out_dir, class_names, pub_colors, model_name):
         make_boxplot(df, metric, ylabel, f"{model_name}: {metric} Overall",
                      str(out_dir / f"boxplot_{metric.lower()}_overall.png"))
 
-
-# ── Main ─────────────────────────────────────────────────────────────────────
-
 def load_predictions_from_txt(pred_path, h, w, model_key):
     """Load saved YOLO polygon predictions from a .txt file.
 
@@ -370,14 +350,13 @@ def load_predictions_from_txt(pred_path, h, w, model_key):
             return {i: np.zeros((h, w), dtype=np.uint8) for i in range(6)}
 
     if model_key == "unet_semantic":
-        # Reconstruct 7-class semantic mask from raw 6-class polygons
+
         return polygons_to_raw_semantic_mask(anns, h, w)
     else:
         masks = np.array([cv2.fillPoly(np.zeros((h, w), dtype=np.uint8),
                                         [a["polygon"].astype(np.int32)], 1) for a in anns])
         labels = np.array([a["class_id"] for a in anns], dtype=np.int32)
         return get_filled_classes(masks, labels, h, w)
-
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate on native + 7 bio classes")
@@ -401,11 +380,10 @@ def main():
     split = get_split(strategy=args.strategy)
     samples = split["test"]
 
-    # Resolve run directory
     if args.out_dir:
         base_dir = Path(args.out_dir)
     elif args.from_predictions:
-        # predictions/ dir is inside the run dir
+
         base_dir = args.from_predictions.parent
     else:
         ckpt = Path(args.checkpoint)
@@ -436,7 +414,6 @@ def main():
     print(f"Test set: {args.strategy} ({len(samples)} samples)")
     print(f"Output: {base_dir}")
 
-    # Load model (skip if using saved predictions)
     model = None
     if not args.from_predictions:
         if args.model_key.startswith("yolo"):
@@ -482,17 +459,17 @@ def main():
             from micro_sam.automatic_segmentation import get_predictor_and_segmenter
             from src.config import ANNOTATED_CLASSES
             device = "cuda" if torch.cuda.is_available() else "cpu"
-            # --checkpoint points to the run base dir containing per-class subdirs
+
             run_base = Path(args.checkpoint)
-            model = {}  # dict {class_id: (predictor, segmenter)}
+            model = {}
             for cls_id in range(6):
                 cls_name = ANNOTATED_CLASSES[cls_id]
-                # Find the exported model for this class
+
                 cls_dir = run_base / f"vit_b_lm_class{cls_id}_A"
                 if not cls_dir.exists():
                     print(f"  WARNING: no model dir for class {cls_id} ({cls_name}), skipping")
                     continue
-                # Find the latest run subfolder
+
                 runs = sorted(cls_dir.glob("20*"))
                 if not runs:
                     print(f"  WARNING: no runs in {cls_dir}, skipping class {cls_id}")
@@ -513,16 +490,13 @@ def main():
 
     font = cv2.FONT_HERSHEY_SIMPLEX
 
-    # Native class info
     native_ids = sorted(cfg.native_classes.keys())
     native_names = [cfg.native_classes[i] for i in native_ids]
     native_color_by_name = {cfg.native_classes[i]: cfg.native_colors_rgb[i] for i in native_ids}
 
-    # Pub colors for native classes (use same palette order)
     wong_colors = ["#0072B2", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#D55E00", "#CC79A7", "#000000"]
     native_pub_colors = {name: wong_colors[i % len(wong_colors)] for i, name in enumerate(native_names)}
 
-    # CSV fieldnames
     native_csv_fields = ["sample_id", "species", "microscope", "experiment"]
     for name in native_names:
         native_csv_fields += [f"{name}_IoU", f"{name}_Dice"]
@@ -541,7 +515,6 @@ def main():
         h, w = img.shape[:2]
         img_uint8 = to_uint8(img)
 
-        # Load predictions: from saved .txt files or run inference
         if args.from_predictions:
             pred_file = args.from_predictions / f"{sample.uid}.txt"
             if not pred_file.exists():
@@ -571,14 +544,13 @@ def main():
             "experiment": sample.experiment,
         }
 
-        # ── Native metrics ──
         native_row = dict(base_row)
         native_ious, native_dices = [], []
         gt_native_named = {}
         pred_native_named = {}
         for cls_id in native_ids:
             name = cfg.native_classes[cls_id]
-            # For semantic models, native is (H,W) int32 → extract per-class binary mask
+
             if isinstance(gt_native, np.ndarray) and gt_native.ndim == 2:
                 gt_cls = (gt_native == cls_id).astype(np.uint8)
                 pred_cls = (pred_native == cls_id).astype(np.uint8)
@@ -596,27 +568,22 @@ def main():
         native_row["mean_Dice"] = round(np.mean(native_dices), 4) if native_dices else ""
         native_rows.append(native_row)
 
-        # ── Save predictions as YOLO polygons (raw 6-class format) ──
-        # For YOLO: apply fill_contours before saving (not applied during IoU)
-        # For semantic: convert 7-class argmax to 6 raw filled polygons
-        # For multilabel: already in 6-class format, save as-is
         if args.save_predictions:
             lines = []
             if isinstance(pred_native, np.ndarray) and pred_native.ndim == 2:
-                # Semantic model: convert to raw 6-class filled polygons
+
                 raw_filled = semantic_to_raw_filled(pred_native)
                 for cls_id in range(6):
                     lines.extend(mask_to_yolo_polygons(
                         raw_filled[cls_id], cls_id, h, w))
             else:
-                # YOLO/multilabel/micro-SAM: save as-is
+
                 for cls_id in sorted(pred_native.keys()):
                     lines.extend(mask_to_yolo_polygons(
                         pred_native[cls_id], cls_id, h, w))
             with open(pred_dir / f"{sample.uid}.txt", "w") as f:
                 f.write("\n".join(lines))
 
-        # ── Bio-7 metrics ──
         bio7_row = dict(base_row)
         bio_ious, bio_dices = [], []
         for name in BIO_7_NAMES:
@@ -629,28 +596,25 @@ def main():
         bio7_row["mean_Dice"] = round(np.mean(bio_dices), 4) if bio_dices else ""
         bio7_rows.append(bio7_row)
 
-        # ── Visualizations ──
         if not args.no_vis:
-            # Native vis
+
             grid_native = make_vis_grid(
                 img_uint8, gt_native_named, pred_native_named, native_row,
                 native_names, native_color_by_name, sample.uid, "mean_IoU", font)
             cv2.imwrite(str(native_dir / "vis" / f"{sample.uid}.png"),
                         cv2.cvtColor(grid_native, cv2.COLOR_RGB2BGR))
 
-            # Bio-7 vis
             bio7_color_by_name = {BIO_7_NAMES[i]: BIO_7_COLORS_RGB[i] for i in range(7)}
             grid_bio7 = make_vis_grid(
                 img_uint8, pred_bio, pred_bio, bio7_row,
                 BIO_7_NAMES, bio7_color_by_name, sample.uid, "mean_IoU", font)
-            # Fix: use GT for top row
+
             grid_bio7 = make_vis_grid(
                 img_uint8, gt_bio, pred_bio, bio7_row,
                 BIO_7_NAMES, bio7_color_by_name, sample.uid, "mean_IoU", font)
             cv2.imwrite(str(bio7_dir / "vis" / f"{sample.uid}.png"),
                         cv2.cvtColor(grid_bio7, cv2.COLOR_RGB2BGR))
 
-    # ── Save CSVs ──
     native_rows.sort(key=lambda r: float(r["mean_IoU"]) if r["mean_IoU"] != "" else 0)
     native_csv = native_dir / "per_sample_metrics.csv"
     with open(native_csv, "w", newline="") as f:
@@ -667,7 +631,6 @@ def main():
         writer.writerows(bio7_rows)
     print(f"Bio-7 CSV saved to {bio7_csv}")
 
-    # ── Print summaries ──
     def agg(rows, key):
         vals = [float(r[key]) for r in rows if r[key] != "" and r[key] is not None]
         return np.mean(vals) if vals else 0
@@ -676,7 +639,6 @@ def main():
     print(f"Bio-7  — Mean IoU: {agg(bio7_rows, 'mean_IoU'):.4f}  "
           f"Mean Dice: {agg(bio7_rows, 'mean_Dice'):.4f}")
 
-    # ── Box plots ──
     print("\nGenerating native class box plots...")
     save_boxplots(native_csv, native_dir, native_names, native_pub_colors,
                   f"{cfg.name} Native")
@@ -686,7 +648,6 @@ def main():
                   f"{cfg.name} Bio-7")
 
     print(f"\nAll saved to {base_dir}")
-
 
 if __name__ == "__main__":
     main()

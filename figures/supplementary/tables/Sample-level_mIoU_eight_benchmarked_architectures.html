@@ -108,10 +108,7 @@ function saveSVG() {
     a.href = url; a.download = "Sample-level_mIoU_eight_benchmarked_architectures.svg"; a.click();
     URL.revokeObjectURL(url);
 }
-// PNG CRC table for embedding a pHYs chunk so the saved file declares its
-// DPI. Without this, programs like Word and PowerPoint assume 96 DPI and
-// render the image ~6× larger than the live preview. With pHYs, DPI-aware
-// programs scale it to the correct mm size.
+
 const _CRC_TABLE = (() => {
     const t = new Uint32Array(256);
     for (let n = 0; n < 256; n++) {
@@ -127,22 +124,21 @@ function _crc32(buf, start, len) {
     return (c ^ 0xffffffff) >>> 0;
 }
 function _injectPHYs(pngBytes, ppm) {
-    // PNG = 8-byte signature + IHDR (4+4+13+4=25 bytes) + ... Insert pHYs
-    // chunk right after IHDR (bytes 8..32 → insertion at byte 33).
+
     const ihdrEnd = 33;
     const phys = new Uint8Array(21);
-    // length = 9
+
     phys[0]=0; phys[1]=0; phys[2]=0; phys[3]=9;
-    // type "pHYs"
+
     phys[4]=0x70; phys[5]=0x48; phys[6]=0x59; phys[7]=0x73;
     const writeU32 = (off, v) => {
         phys[off]=(v>>>24)&0xff; phys[off+1]=(v>>>16)&0xff;
         phys[off+2]=(v>>>8)&0xff; phys[off+3]=v&0xff;
     };
-    writeU32(8,  ppm);   // pixels per metre, X
-    writeU32(12, ppm);   // pixels per metre, Y
-    phys[16] = 1;        // unit = metre
-    writeU32(17, _crc32(phys, 4, 13));  // CRC over type+data
+    writeU32(8,  ppm);
+    writeU32(12, ppm);
+    phys[16] = 1;
+    writeU32(17, _crc32(phys, 4, 13));
     const out = new Uint8Array(pngBytes.length + 21);
     out.set(pngBytes.subarray(0, ihdrEnd), 0);
     out.set(phys, ihdrEnd);
@@ -173,7 +169,7 @@ function savePNG() {
         URL.revokeObjectURL(url);
         cv.toBlob(async b2 => {
             const raw = new Uint8Array(await b2.arrayBuffer());
-            const ppm = Math.round(dpi / 0.0254);    // pixels per metre
+            const ppm = Math.round(dpi / 0.0254);
             const withDpi = _injectPHYs(raw, ppm);
             const final = new Blob([withDpi], { type: "image/png" });
             const u2 = URL.createObjectURL(final);

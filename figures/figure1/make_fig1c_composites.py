@@ -1,4 +1,4 @@
-# Figure 1c
+
 
 import sys
 from pathlib import Path
@@ -13,9 +13,7 @@ sys.path.insert(0, str(PROJECT))
 from src.config import SampleRecord
 from src.preprocessing import load_sample_normalized
 
-
 SAMPLE_DIR = HERE / "fig1c_samples"
-
 
 def make_composite(dapi, fitc, tritc):
     h, w = dapi.shape
@@ -24,7 +22,6 @@ def make_composite(dapi, fitc, tritc):
     comp[..., 0] += fitc; comp[..., 1] += fitc
     comp[..., 0] += tritc
     return np.clip(comp, 0, 1)
-
 
 def make_local_sample(uid: str) -> SampleRecord:
     image_dir = SAMPLE_DIR / uid
@@ -39,7 +36,6 @@ def make_local_sample(uid: str) -> SampleRecord:
         annotation_path=Path("/dev/null"),
     )
 
-
 def main():
     uids = sorted(p.name for p in SAMPLE_DIR.iterdir() if p.is_dir())
     print(f"Found {len(uids)} samples")
@@ -51,7 +47,6 @@ def main():
         out_png = SAMPLE_DIR / f"{uid}.png"
         Image.fromarray(rgb).save(out_png)
         print(f"  wrote {out_png.name} ({rgb.shape[0]}x{rgb.shape[1]})")
-
 
 if __name__ == "__main__":
     main()

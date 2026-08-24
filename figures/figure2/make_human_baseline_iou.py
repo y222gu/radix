@@ -1,4 +1,4 @@
-# Figure 2 human baseline
+
 
 import csv
 import sys
@@ -24,13 +24,11 @@ BIO_CLASSES_NO_ROOT = ["Epidermis", "Exodermis", "Cortex",
 
 SPECIES_RENAME = {"Tomato": "Solanum"}
 
-
 def load_polygons_to_bio7(txt_path, h, w):
     anns = parse_yolo_annotations(txt_path, w, h)
     raw  = polygons_to_raw_binary_masks(anns, h, w)
     raw  = {k: fill_contours(v) for k, v in raw.items()}
     return yolo_overlap_false_to_bio7(raw, h, w)
-
 
 def iou(a, b):
     a, b = a.astype(bool), b.astype(bool)
@@ -38,7 +36,6 @@ def iou(a, b):
     if union == 0:
         return None
     return float((a & b).sum()) / float(union)
-
 
 def main():
     meta = {}
@@ -94,7 +91,6 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
     print(f"\n→ {OUT_CSV} ({len(rows)} samples)")
-
 
 if __name__ == "__main__":
     main()

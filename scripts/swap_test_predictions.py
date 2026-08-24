@@ -10,14 +10,14 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "figures_for_paper" / "figure3"))
 
-from src.annotation_utils import (                                       # noqa: E402
+from src.annotation_utils import (
     parse_yolo_annotations, polygons_to_raw_semantic_mask,
 )
-from generate_dense_features import save_png                             # noqa: E402
-from archive.figures_for_paper.figure3.fig3a_predictions_assets import (         # noqa: E402
+from generate_dense_features import save_png
+from archive.figures_for_paper.figure3.fig3a_predictions_assets import (
     render_bio7,
 )
-from scripts.render_science_art_pred_pca import (                        # noqa: E402
+from scripts.render_science_art_pred_pca import (
     INPUT_SIZE, OUT_ROOT, build_montage, collect_uids,
 )
 
@@ -29,14 +29,12 @@ TEST_UIDS = [
     "Tomato_Olympus_Exp5_Solanum_MajkenSlide1_14",
 ]
 
-
 def render_saved_prediction(uid: str, size: int = INPUT_SIZE):
     """Saved YOLO polygon .txt → 7-class semantic mask → Bio-7 colored PNG."""
     txt = PRED_DIR / f"{uid}.txt"
     anns = parse_yolo_annotations(txt, size, size)
     sem = polygons_to_raw_semantic_mask(anns, size, size)
     return render_bio7(sem)
-
 
 def main():
     for uid in TEST_UIDS:
@@ -48,7 +46,6 @@ def main():
     uids = collect_uids()
     print(f"\nRebuilding montage with {len(uids)} samples …")
     build_montage(uids)
-
 
 if __name__ == "__main__":
     main()

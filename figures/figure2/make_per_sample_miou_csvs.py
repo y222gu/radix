@@ -1,11 +1,10 @@
-# Figure 2 b/c/d/e/f data prep
+
 
 import csv
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 METRICS_DIR = HERE / "eval_metrics"
-
 
 MODELS = {
     "DINOv3 + DPT-meta":      "dinov3_dpt",
@@ -27,7 +26,6 @@ SPLITS = ["test", "zero-shot"]
 
 SPECIES_RENAME = {"Tomato": "Solanum"}
 
-
 def _floats(r, classes, metric):
     vals = []
     for c in classes:
@@ -36,7 +34,6 @@ def _floats(r, classes, metric):
             continue
         vals.append(float(s))
     return vals
-
 
 def load_per_sample(metrics_csv):
     out = []
@@ -59,7 +56,6 @@ def load_per_sample(metrics_csv):
             row["mean_Dice"] = sum(dices) / len(dices) if dices else None
             out.append(row)
     return out
-
 
 def main():
     by_model_split = {}
@@ -127,7 +123,6 @@ def main():
                     "mean_IoU":   f"{r['mean_IoU']:.4f}",
                 })
     print(f"→ {by_mic_path}")
-
 
 if __name__ == "__main__":
     main()
